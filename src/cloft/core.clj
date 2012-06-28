@@ -256,6 +256,11 @@
         world (.getWorld location)]
     (.generateTree world location org.bukkit.TreeType/BIRCH)))
 
+(defn arrow-skill-web [entity]
+  (let [location (.getLocation entity)
+        world (.getWorld location)]
+    (.setType block Material/WEB)))
+
 (defn arrow-skill-ore [entity]
   (let [block (block-of-arrow entity)]
     (when (= (.getType block) Material/STONE)
@@ -771,6 +776,7 @@
                  Material/YELLOW_FLOWER [arrow-skill-teleport "TELEPORT"]
                  Material/RED_ROSE [arrow-skill-fire "FIRE"]
                  Material/SAPLING [arrow-skill-tree "TREE"]
+                 Material/WEB [arrow-skill-web "WEB"]
                  Material/WORKBENCH [arrow-skill-ore "ORE"]
                  Material/TRAP_DOOR ['digg "DIGG"]
                  Material/LADDER ['trap "TRAP"]
