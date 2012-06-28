@@ -24,7 +24,8 @@
   (:import [org.bukkit Location Effect])
   (:import [org.bukkit.util BlockIterator])
   (:import [org.bukkit.event.block Action])
-  (:require [cloft.zhelpers :as mq]))
+  ;(:require [cloft.zhelpers :as mq])
+  )
 
 (def NAME-ICON
   {"ujm" "http://www.gravatar.com/avatar/d9d0ceb387e3b6de5c4562af78e8a910.jpg?s=28\n"
@@ -259,7 +260,7 @@
 (defn arrow-skill-web [entity]
   (let [location (.getLocation entity)
         world (.getWorld location)]
-    (.setType block Material/WEB)))
+    (.setType (.getBlockAt world location) Material/WEB)))
 
 (defn arrow-skill-ore [entity]
   (let [block (block-of-arrow entity)]
@@ -2465,30 +2466,6 @@
   (comment (proxy [java.lang.Object CommandExecuter] []
     (onCommand [this ^CommandSender sender ^Command command ^String label ^String[] args]
       (prn command))))
-  (future-call (fn []
-                 (do
-                  (let [ctx (mq/context 1)
-                        subscriber (mq/socket ctx mq/sub)]
-                    (mq/bind subscriber "tcp://*:1235")
-                    (mq/subscribe subscriber "")
-                    (while true
-                      (let [contents (read-string (mq/recv-str subscriber))
-                            players (Bukkit/getOnlinePlayers)]
-                        (condp #(.startsWith %2 %1) (:body contents)
-                          "/list"
-                          (let [msg (if (empty? players)
-                                      "(no players)"
-                                      (clojure.string/join "\n" (map #(player-inspect % (= (:body contents) "/list -l")) players)))]
-                            (c/lingr "computer_science" msg)
-                            (c/broadcast msg))
-                          "/chicken"
-                          (future-call
-                            (fn []
-                              (doseq [p (Bukkit/getOnlinePlayers)]
-                                (when-not (.isDead p)
-                                  (.spawn (.getWorld p) (.add (.getLocation p) 0 2 0) Chicken)))))
-                          (when-not (empty? players)
-                            (c/broadcast (str (:user contents) ": " (:body contents)))))))))))
-  #_(c/lingr "cloft plugin running..."))
+  (c/lingr "cloft plugin running..."))
 
 ;  (c/lingr "cloft plugin stopping...")
