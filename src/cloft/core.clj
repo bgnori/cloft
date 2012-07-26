@@ -1,6 +1,7 @@
 (ns cloft.core
   (:require [cloft.cloft :as c])
   (:require [cloft.ujm :as ujm])
+  (:require [cloft.scheduler :as cloft-scheduler])
   ;(:require [clojure.core.match :as m])
   (:require [swank.swank])
   (:require [clojure.string :as s])
@@ -61,26 +62,6 @@
 
 (def world (Bukkit/getWorld "world"))
 
-(def cloft-schedule-table (atom {}))
-(def cloft-schedule-currenct-tick (atom 0))
-(defn cloft-schedule-settimer [after f]
-  ;(prn cloft-schedule-settimer after f)
-  ;(prn (count @cloft-schedule-table))
-  (dosync
-   (let [wake-up (+ @cloft-schedule-currenct-tick after)]
-     (swap! cloft-schedule-table assoc wake-up
-            (cons f (@cloft-schedule-table wake-up []))))))
-
-(defn cloft-scheduler []
-  (dosync
-    (let [table @cloft-schedule-table
-          now @cloft-schedule-currenct-tick
-          r (table now false)]
-      (when r
-        ;(prn r table now)
-        (doseq [f r] (f)))
-      (swap! cloft-schedule-table dissoc @cloft-schedule-currenct-tick))
-    (swap! cloft-schedule-currenct-tick inc)))
 
 (def player-death-locations (atom {}))
 (def last-vertical-shots (atom {}))
@@ -471,7 +452,7 @@
     ;         t1, t2, t3, t4
 
 (defn fly-with-check [projectile fn]
-  (cloft-schedule-settimer
+  (cloft-scheduler/settimer
     1
     #(when (fn projectile)
        (fly-with-check projectile fn))))
@@ -948,7 +929,7 @@
 (defn summon-x
   ([pos world creature] (summon-x pos world creature 1))
   ([pos world creature after]
-   (cloft-schedule-settimer after #(.spawn world (.toLocation pos world) creature))))
+   (cloft-scheduler/settimer after #(.spawn world (.toLocation pos world) creature))))
 
 (defn summon-giant [player block]
   (.damage player (/ (.getHealth player) 2))
@@ -966,7 +947,7 @@
         pos2 (local-coordinate-to-world player block 15.0 1.0 0.0)
         pos3 (local-coordinate-to-world player block 15.0 1.0 5.0)
         fire-effect (fn [v i]
-                      (cloft-schedule-settimer
+                      (cloft-scheduler/settimer
                         (* 4 i)
                         (fn []
                           (when (= Material/AIR (.getType v))
@@ -975,13 +956,13 @@
     (letfn [(sure-explosion-at
               ([pos wolrd] (sure-explosion-at pos world 1))
               ([pos world delay]
-               (cloft-schedule-settimer 1  (fn []
+               (cloft-scheduler/settimer 1  (fn []
                                              (when-not (.createExplosion world (.toLocation pos world) 0.0 true)
                                                ; retry 1 tick later
                                                (sure-explosion-at pos world))))))
             (summon-set-of-evils-at
               [pos loc world]
-              (cloft-schedule-settimer
+              (cloft-scheduler/settimer
                 1
                 (fn []
                   (place-blocks-in-line world (.clone loc) (.clone pos) fire-effect 2)
@@ -1007,7 +988,7 @@
         bottom (local-coordinate-to-world player block 15.0 0.0 0.0)
         top (local-coordinate-to-world player block 15.0 6.0 0.0)]
     (letfn [(place-cobblestones [v i]
-              (cloft-schedule-settimer (* 4 i)
+              (cloft-scheduler/settimer (* 4 i)
                                        #(when (= Material/AIR (.getType v))
                                           (.setType v Material/COBBLESTONE))))]
       (.strikeLightningEffect world (.toLocation bottom world))
@@ -1030,7 +1011,7 @@
         end-center (local-coordinate-to-world player block distance 0.0 0.0)
         end-right (local-coordinate-to-world player block distance 0.0 1.0)
         block-floor (fn [v i]
-                      (cloft-schedule-settimer
+                      (cloft-scheduler/settimer
                         (* 4 i)
                         #(when (boolean ((block-categoly :enterable) (.getType v)))
                            (when (= 0 (rand-int 6))
@@ -1067,7 +1048,7 @@
         center-location (.toLocation center-vector world)]
     (doseq [v (blocks-in-radiaus-xz world center-location 20 70)]
       (when (= (rand-int 30) 1)
-        (cloft-schedule-settimer
+        (cloft-scheduler/settimer
           (rand-int 300)
           #(let [tnt (.spawn world (.getLocation v) TNTPrimed)
                  uy (Vector. 0.0 -10.0 0.0)
@@ -2451,11 +2432,12 @@
   (Bukkit/addRecipe recipe-flint-gravel)
   (Bukkit/addRecipe recipe-seed-coal)
   (.scheduleSyncRepeatingTask (Bukkit/getScheduler) plugin (fn [] (periodically)) 50 50)
-  #_(.scheduleSyncRepeatingTask (Bukkit/getScheduler) plugin (fn [] (cloft-scheduler)) 0 1)
+  (.scheduleSyncRepeatingTask (Bukkit/getScheduler) plugin (fn [] (cloft-scheduler/on-beat)) 0 1)
   (comment (proxy [java.lang.Object CommandExecuter] []
     (onCommand [this ^CommandSender sender ^Command command ^String label ^String[] args]
       (prn command))))
-  (c/lingr "cloft plugin running...") 
-  (ujm/msg "core.clj"))
+  (c/lingr "cloft plugin running...")
+  (ujm/msg "core.clj")
+  (cloft-scheduler/msg "core.clj"))
 
 ;  (c/lingr "cloft plugin stopping...")
