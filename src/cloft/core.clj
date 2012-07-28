@@ -54,7 +54,6 @@
 (def world (Bukkit/getWorld "world"))
 
 
-(def player-death-locations (atom {}))
 (def last-vertical-shots (atom {}))
 
 (defn player-teleport-machine [evt player]
@@ -86,7 +85,7 @@
   (when (and
           (= (.getWorld player) world)
           (< (.distance ujm/place7 (.getLocation player)) 1))
-    (let [death-point (get @player-death-locations (.getDisplayName player))]
+    (let [death-point (player/death-location-of player)]
       (when death-point
         (.isLoaded (.getChunk death-point)) ; for side-effect
         (c/lingr (str (.getDisplayName player) " is teleporting to the last death place..."))
@@ -1245,7 +1244,7 @@
       (and
         (= (.getAction evt) Action/RIGHT_CLICK_BLOCK)
         (= (.getType block) Material/CAKE_BLOCK))
-      (if-let [death-point (get @player-death-locations (.getDisplayName player))]
+      (if-let [death-point (player/death-location-of player)]
         (do
           (.load (.getChunk death-point))
           (c/broadcast (str (.getDisplayName player) " is teleporting to the last death place..."))
@@ -1616,15 +1615,12 @@
                   (assoc % name (assoc old-map target-name (inc (or (old-map target-name) 0))))))
         (c/broadcast name " killed " target-name " (exp: " (.getDroppedExp evt) ")")))))
 
-(defn player-death-event [evt player]
-  (swap! player-death-locations assoc (.getDisplayName player) (.getLocation player))
-  (c/lingr (str (player/name2icon (.getDisplayName player)) (.getDeathMessage evt))))
 
 (defn entity-death-event [evt]
   (let [entity (.getEntity evt)]
     (cond
       (instance? Pig entity) (pig-death-event entity)
-      (instance? Player entity) (player-death-event evt entity)
+      (instance? Player entity) (player/death-event evt entity)
       (and (instance? LivingEntity entity) (.getKiller entity)) (entity-murder-event evt entity))))
 
 (defn creeper-explosion-1 [evt entity]

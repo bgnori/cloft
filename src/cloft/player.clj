@@ -17,6 +17,8 @@
 (defn name2icon [name]
   (get NAME-ICON name (str name ": ")))
 
+
+
 ; zombie related.
 
 (def zombie-players (atom #{}))
@@ -40,9 +42,25 @@
   (swap! zombie-players disj (.getDisplayName target))
   (c/broadcast (.getDisplayName target) " rebirthed as a human."))
 
-; internal
 (defn zombie-player-periodically [zplayer]
   (when (= 15 (.getLightLevel (.getBlock (.getLocation zplayer))))
     (.setFireTicks zplayer 100))
   (.setFoodLevel zplayer (dec (.getFoodLevel zplayer))))
+
+
+
+; death realated 
+
+(def death-locations (atom {}))
+
+(defn death-event [evt player]
+  (swap! death-locations assoc (.getDisplayName player) (.getLocation player))
+  (c/lingr (str (name2icon (.getDisplayName player)) (.getDeathMessage evt))))
+
+(defn death-location-of [player]
+  (get @death-locations (.getDisplayName player)))
+
+
+
+
 
