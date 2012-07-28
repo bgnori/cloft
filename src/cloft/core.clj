@@ -1561,7 +1561,6 @@
                     (.setHealth player (/ (.getMaxHealth player) 3))
                     (.setFoodLevel player 5)))))
 
-(def murder-record (atom {}))
 
 (defn spawn-block-generater [entity]
   (let [loc (.getLocation entity)]
@@ -1608,12 +1607,7 @@
       (.setDroppedExp evt (int (* (.getDroppedExp evt) (/ 15 (.getHealth killer)))))
       (when (= 'exp (arrow-skill-of killer))
         (.setDroppedExp evt (int (* (.getDroppedExp evt) 3))))
-      (let [name (.getDisplayName killer)
-            target-name (c/entity2name entity)]
-        (swap! murder-record
-               #(let [old-map (or (% name) {})]
-                  (assoc % name (assoc old-map target-name (inc (or (old-map target-name) 0))))))
-        (c/broadcast name " killed " target-name " (exp: " (.getDroppedExp evt) ")")))))
+      (player/record-and-report killer entity evt))))
 
 
 (defn entity-death-event [evt]
@@ -2250,20 +2244,6 @@
     (.showPlayer player (c/ujm))))
 
 
-(defn player-inspect [player verbose?]
-  (format
-    "%s (%s)"
-    (.getDisplayName player)
-    (clojure.string/join
-      ", "
-      (map (partial clojure.string/join ": ")
-           (filter second
-                   (merge (when verbose?
-                            {'MR (@murder-record (.getDisplayName player))})
-                          {'HP (.getHealth player)
-                           'MP (.getFoodLevel player)
-                           'AS (skill2name (arrow-skill-of player))
-                           'RS (skill2name (reaction-skill-of-without-consume player))}))))))
 
 (defonce swank* nil)
 (defn on-enable [plugin]
