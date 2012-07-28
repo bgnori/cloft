@@ -2,6 +2,7 @@
   (:require [cloft.cloft :as c])
   (:require [cloft.ujm :as ujm])
   (:require [cloft.scheduler :as cloft-scheduler])
+  (:require [cloft.sanctuary :as sanctuary])
   ;(:require [clojure.core.match :as m])
   (:require [swank.swank])
   (:require [clojure.string :as s])
@@ -110,9 +111,6 @@
         (c/consume-itemstack (.getInventory player) Material/FEATHER)
         (c/add-velocity player 0 x2 0)))))
 
-(def sanctuary [(org.bukkit.Location. world 45 30 -75)
-                (org.bukkit.Location. world 84 90 -44)])
-(def sanctuary-players (atom #{}))
 
 (defn event [evt]
   (prn evt))
@@ -141,12 +139,7 @@
     (comment(when (> -0.1 (.getY (.getVelocity player)))
       (.setVelocity player (.setY (.clone (.getVelocity player)) -0.1))))
     #_(let [name (.getDisplayName player)]
-      (if (get @sanctuary-players name)
-        (when-not (c/location-bound? (.getLocation player) (first sanctuary) (second sanctuary))
-          (swap! sanctuary-players disj name))
-        (when (c/location-bound? (.getLocation player) (first sanctuary) (second sanctuary))
-          (c/broadcast name " entered the sanctuary.")
-          (swap! sanctuary-players conj name)))
+        (sanctuary/on-player-move-event [player])
       (when (and (= (.getWorld player) world) (< (.distance (org.bukkit.Location. world 70 66 -58) (.getLocation player)) 1))
         (if (c/jumping? evt)
           (when (not= @bossbattle-player player)
@@ -1134,7 +1127,7 @@
                (doseq [entity (.getNearbyEntities player 4 4 4)]
                  (.setVelocity entity (vector-from-to entity block)))))
     #_(build-long block (.getBlockAgainst evt))
-    #_(when (c/location-bound? (.getLocation block) (first sanctuary) (second sanctuary))
+    #_(when (sanctuary/is-in? (.getLocation block))
         (.setCancelled evt true))))
 
 (defn player-login-event [evt]
@@ -1733,7 +1726,7 @@
 
 (defn creeper-explosion-2 [evt entity]
   (.setCancelled evt true)
-  (if (c/location-bound? (.getLocation entity) (first sanctuary) (second sanctuary))
+  (if (sanctuary/is-in? (.getLocation entity))
     (prn 'cancelled)
     (let [loc (.getLocation entity)]
       (.setType (.getBlock loc) Material/PUMPKIN)
@@ -1766,7 +1759,7 @@
     (let [ename (c/entity2name entity)
           entities-nearby (filter #(instance? Player %) (.getNearbyEntities entity 5 5 5))]
       (cond
-        #_((c/location-bound? (.getLocation entity) (first sanctuary) (second sanctuary))
+        #_((sanctuary/is-in? (.getLocation entity))
           (.setCancelled evt true))
 
         (instance? Creeper entity)
