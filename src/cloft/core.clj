@@ -6,6 +6,7 @@
   (:require [cloft.chimera-cow :as chimera-cow])
   (:require [cloft.arrow :as a])
   (:require [cloft.recipe ])
+  (:require [cloft.player :as player])
   ;(:require [clojure.core.match :as m])
   (:require [swank.swank])
   (:require [clojure.string :as s])
@@ -33,20 +34,6 @@
   ;(:require [cloft.zhelpers :as mq])
   )
 
-(def NAME-ICON
-  {"ujm" "http://www.gravatar.com/avatar/d9d0ceb387e3b6de5c4562af78e8a910.jpg?s=28\n"
-   "sbwhitecap" "http://www.gravatar.com/avatar/198149c17c72f7db3a15e432b454067e.jpg?s=28\n"
-   "Sandkat" "https://twimg0-a.akamaihd.net/profile_images/1584518036/claire2_mini.jpg\n"
-   "kldsas" "http://a0.twimg.com/profile_images/1825629510/____normal.png\n"
-   "raa0121" "http://a0.twimg.com/profile_images/1414030177/nakamigi_normal.png\n"})
-
-(def zombie-players (atom #{}))
-
-(defn zombie-player? [p]
-  (boolean (get @zombie-players (.getDisplayName p))))
-
-(defn name2icon [name]
-  (get NAME-ICON name (str name ": ")))
 
 ;(defn block-break [evt]
 ;  (.sendMessage (.getPlayer evt) "You know. Breaking stuff should be illegal."))
@@ -1142,7 +1129,7 @@
                     (.playEffect (.getWorld player) (.getLocation player) Effect/RECORD_PLAY (rand-nth c/records))
                     #_(.sendMessage player "[NEWS] blazeが現世にも現れる。中身は全く別物。要注意!")
                     (.sendMessage player "[NEWS] 川で砂金をとろう! クワと皿を忘れずに。")))
-    (c/lingr (str (name2icon (.getDisplayName player)) "logged in now."))))
+    (c/lingr (str (player/name2icon (.getDisplayName player)) "logged in now."))))
 
 (defn paperlot [player]
   (letfn [(unlucky [player]
@@ -1163,11 +1150,11 @@
 ;    [Listener] []
 ;    (onPlayerQuit
 ;      [evt]
-;      (c/lingr (str (name2icon (.getDisplayName (.getPlayer evt))) "quitted.")))))
+;      (c/lingr (str (player/name2icon (.getDisplayName (.getPlayer evt))) "quitted.")))))
 
 (defn player-chat-event [evt]
   (let [name (.getDisplayName (.getPlayer evt))]
-    (c/lingr "computer_science" (str (name2icon name) (.getMessage evt)))))
+    (c/lingr "computer_science" (str (player/name2icon name) (.getMessage evt)))))
 
 (defn touch-player [target]
   (.setFoodLevel target (dec (.getFoodLevel target)))
@@ -1233,12 +1220,6 @@
       (.setType (.getBlock (.getLocation door)) Material/AIR)
       (.setType (.getBlock (.add (.getLocation door) 0 10 0)) Material/IRON_DOOR)))))
 
-(defn rebirth-from-zombie [target]
-  (.setMaximumAir target 300) ; default maximum value
-  (.setRemainingAir target 300)
-  (.setHealth target (.getMaxHealth target))
-  (swap! zombie-players disj (.getDisplayName target))
-  (c/broadcast (.getDisplayName target) " rebirthed as a human."))
 
 (def plowed-sands (atom #{}))
 
@@ -1341,10 +1322,10 @@
           )
 
         (and
-          (zombie-player? player)
+          (player/zombie? player)
           (= (.. evt (getMaterial)) Material/MILK_BUCKET))
         (do
-          (rebirth-from-zombie player)
+          (player/rebirth-from-zombie player)
           (when (= 0 (rand-int 3))
             (.setType (.getItemInHand player) Material/BUCKET)))
 
@@ -1520,11 +1501,6 @@
   (when (< (.getOldLevel evt) (.getNewLevel evt))
     (c/broadcast "Level up! "(.getDisplayName (.getPlayer evt)) " is Lv" (.getNewLevel evt))))
 
-; internal
-(defn zombie-player-periodically [zplayer]
-  (when (= 15 (.getLightLevel (.getBlock (.getLocation zplayer))))
-    (.setFireTicks zplayer 100))
-  (.setFoodLevel zplayer (dec (.getFoodLevel zplayer))))
 
 (comment (def chain (atom {:entity nil :loc nil})))
 
@@ -1570,8 +1546,8 @@
   (periodically-entity-touch-player-event)
   (comment (.setHealth v (inc (.getHealth v))))
   (chimera-cow/periodically)
-  (seq (map zombie-player-periodically
-            (filter zombie-player? (Bukkit/getOnlinePlayers))))
+  (seq (map player/zombie-player-periodically
+            (filter player/zombie? (Bukkit/getOnlinePlayers))))
   nil)
 
 (defn pig-death-event [entity]
@@ -1642,7 +1618,7 @@
 
 (defn player-death-event [evt player]
   (swap! player-death-locations assoc (.getDisplayName player) (.getLocation player))
-  (c/lingr (str (name2icon (.getDisplayName player)) (.getDeathMessage evt))))
+  (c/lingr (str (player/name2icon (.getDisplayName player)) (.getDeathMessage evt))))
 
 (defn entity-death-event [evt]
   (let [entity (.getEntity evt)]
@@ -1716,12 +1692,6 @@
                   (apply str (interpose x xs)))]
           (c/lingr (str ename " is exploding near " (join (map #(.getDisplayName %) entities-nearby) ", "))))))))
 
-(defn zombieze [entity]
-  (swap! zombie-players conj (.getDisplayName entity))
-  (.setMaximumAir entity 1)
-  (.setRemainingAir entity 1)
-  (.sendMessage entity "You turned into a zombie.")
-  (c/lingr (str (name2icon (.getDisplayName entity)) "turned into a zombie.")))
 
 (comment (defn potion-weakness [name]
   (.apply
@@ -1930,11 +1900,9 @@
                    (.getDamager evt))]
     (cond
       (= EntityDamageEvent$DamageCause/DROWNING (.getCause evt))
-      (when (and
-              (instance? Player target)
-              (zombie-player? target))
+      (when (player/zombie? target))
         (.setCancelled evt true)
-        (rebirth-from-zombie target))
+        (player/rebirth-from-zombie target))
 
       (= EntityDamageEvent$DamageCause/ENTITY_EXPLOSION (.getCause evt))
       (do
@@ -2029,14 +1997,14 @@
                            (= arrow-skill-diamond (arrow-skill-of actual-attacker)))))
                 (skill target actual-attacker))))
           (when (and (instance? Zombie attacker) (not (instance? PigZombie attacker)))
-            (if (zombie-player? target)
+            (if (player/zombie? target)
               (.setCancelled evt true)
-              (zombieze target)))
-          (when (and (instance? Player attacker) (zombie-player? attacker))
-            (zombieze target)
+              (player/zombieze target)))
+          (when (player/zombie? attacker) 
+            (player/zombieze target)
             (.sendMessage attacker "You made a friend")))
         (when (chimera-cow/is? target)
-          (chimera-cow/damage-event evt target attacker))))))
+          (chimera-cow/damage-event evt target attacker)))))
 
 (defn block-break-event [evt]
   (let [block (.getBlock evt)]
