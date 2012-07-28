@@ -5,6 +5,7 @@
   (:require [cloft.sanctuary :as sanctuary])
   (:require [cloft.chimera-cow :as chimera-cow])
   (:require [cloft.arrow :as a])
+  (:require [cloft.recipe ])
   ;(:require [clojure.core.match :as m])
   (:require [swank.swank])
   (:require [clojure.string :as s])
@@ -2284,29 +2285,6 @@
     (.teleport (c/ujm) @pre-stalk)
     (.showPlayer player (c/ujm))))
 
-(def recipe-string-web
-  (let [x (org.bukkit.inventory.ShapelessRecipe.
-            (ItemStack. Material/WEB 3))]
-    (.addIngredient x 3 Material/STRING)
-    x))
-
-(def recipe-gravel-flint
-  (let [x (org.bukkit.inventory.ShapelessRecipe.
-            (ItemStack. Material/FLINT 1))]
-    (.addIngredient x 3 Material/GRAVEL)
-    x))
-
-(def recipe-flint-gravel
-  (let [x (org.bukkit.inventory.ShapelessRecipe.
-            (ItemStack. Material/GRAVEL 3))]
-    (.addIngredient x 1 Material/FLINT)
-    x))
-
-(def recipe-seed-coal
-  (let [x (org.bukkit.inventory.ShapelessRecipe.
-            (ItemStack. Material/COAL 1))]
-    (.addIngredient x 4 Material/SEEDS)
-    x))
 
 (defn player-inspect [player verbose?]
   (format
@@ -2327,10 +2305,7 @@
 (defn on-enable [plugin]
   (when (nil? swank*)
     (def swank* (swank.swank/start-repl 4005)))
-  (Bukkit/addRecipe recipe-string-web)
-  (Bukkit/addRecipe recipe-gravel-flint)
-  (Bukkit/addRecipe recipe-flint-gravel)
-  (Bukkit/addRecipe recipe-seed-coal)
+  (cloft.recipe/on-enable)
   (.scheduleSyncRepeatingTask (Bukkit/getScheduler) plugin (fn [] (periodically)) 50 50)
   (.scheduleSyncRepeatingTask (Bukkit/getScheduler) plugin (fn [] (cloft-scheduler/on-beat)) 0 1)
   (comment (proxy [java.lang.Object CommandExecuter] []
