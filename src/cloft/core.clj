@@ -3,6 +3,8 @@
   (:require [cloft.ujm :as ujm])
   (:require [cloft.scheduler :as cloft-scheduler])
   (:require [cloft.sanctuary :as sanctuary])
+  (:require [cloft.chimera-cow :as chimera-cow])
+  (:require [cloft.arrow :as a])
   ;(:require [clojure.core.match :as m])
   (:require [swank.swank])
   (:require [clojure.string :as s])
@@ -484,17 +486,6 @@
   (c/broadcast (format "%s beated a blaze2!" (.getDisplayName player)))
   (c/lingr (format "%s beated a blaze2!" (.getDisplayName player))))
 
-(defn chimera-cow-murder-event [evt cow player]
-  (future-call #(let [world (.getWorld cow)
-                      loc (.getLocation cow)]
-                  (doseq [_ (range 0 20)]
-                    (Thread/sleep 1000)
-                    (.dropItemNaturally world loc (if (= 0 (rand-int 10))
-                                                    (ItemStack. Material/GOLDEN_APPLE)
-                                                    (ItemStack. Material/APPLE))))))
-  (.setDroppedExp evt 200)
-  (c/broadcast (format "%s beated a chimera cow!" (.getDisplayName player)))
-  (c/lingr (format "%s beated a chimera cow!" (.getDisplayName player))))
 
 (defn projectile-launch-event [evt]
   (let [projectile (.getEntity evt)
@@ -1418,22 +1409,14 @@
                     (when (= player (.getPassenger player))
                       (.setPassenger player nil))))))
 
-(def chimera-cows (atom #{}))
 
-(defn chimera-cow-birth [player cow]
-  (.sendMessage player "chimera!")
-  (swap! chimera-cows conj cow)
-  #_(future-call #(let [world (.getWorld cow)]
-                  (.setThundering world true)
-                  (Thread/sleep 10000)
-                  (.setThundering world false))))
 
 (defn player-rightclick-cow [player target]
   (let [itemstack (.getItemInHand player)]
     (if (and
           itemstack
           (= Material/COOKED_BEEF (.getType itemstack)))
-      (chimera-cow-birth player target)
+      (chimera-cow/birth player target)
       (.dropItemNaturally (.getWorld target) (.getLocation target) (ItemStack. Material/COAL)))))
 
 (defn player-interact-entity-event [evt]
@@ -1579,55 +1562,13 @@
     (when (and (nil? (.getPassenger player)) (not= "ujm" (.getDisplayName player)))
       (.setAllowFlight player false))))
 
-(defn periodically-chimera-cow []
-  (doseq [c @chimera-cows]
-    (if (or (.isDead c) (= 0 (rand-int 1000)))
-      (swap! chimera-cows disj c)
-      (do
-        (.playEffect (.getWorld c) (.getLocation c) Effect/MOBSPAWNER_FLAMES nil)
-        (when (not= 0 (rand-int 10))
-          (future-call
-            (fn []
-              (Thread/sleep (rand-int 2500))
-              (let [players (filter #(instance? Player %) (.getNearbyEntities c 50 50 50))]
-                (when-let [player (when-not (empty? players)
-                                    (rand-nth players))]
-                  (let [dire (.subtract (.clone (.getLocation player))
-                                        (.clone (.getLocation c)))
-                        vect (.normalize (.toVector dire))]
-                    (if (not= 0 (rand-int 5))
-                      (do
-                        (.setVelocity c (Vector. (* (.getX vect) 0.1)
-                                                 (rand-nth [0.3 0.5 0.7])
-                                                 (* (.getZ vect) 0.1)))
-                      (Thread/sleep 800)
-                      (.setVelocity c (Vector. 0.0 0.5 0.0))
-                      (let [dire (.subtract (.clone (.getLocation player))
-                                            (.clone (.getLocation c)))
-                            vect (.normalize (.toVector dire))]
-                        (doseq [_ [0 1 2]]
-                          (let [fb (.launchProjectile c Fireball)]
-                            (.setShooter fb c)
-                            (.setYield fb 0.0)
-                            (.teleport fb (.add (.clone (.getLocation c)) vect))
-                            (Thread/sleep 300)
-                            (.setDirection fb vect)
-                            (.setVelocity fb (.add vect (Vector. (- (rand) 0.5) 0.0 (- (rand) 0.5))))))))
-                      (letfn [(rand1 []
-                                (* 0.8 (- (rand) 0.5)))]
-                        (doseq [_ (range 0 50)]
-                          (let [ar (.launchProjectile c Arrow)]
-                            (.setShooter ar c)
-                            (.setVelocity
-                              ar
-                              (Vector. (rand1) 1.0 (rand1)))))))))))))))))
 
 (defn periodically []
   (periodically-terminate-nonchicken-flighter)
   (comment (rechain-entity))
   (periodically-entity-touch-player-event)
   (comment (.setHealth v (inc (.getHealth v))))
-  (periodically-chimera-cow)
+  (chimera-cow/periodically)
   (seq (map zombie-player-periodically
             (filter zombie-player? (Bukkit/getOnlinePlayers))))
   nil)
@@ -1678,10 +1619,8 @@
               (instance? Blaze entity)
               (= "world" (.getName (.getWorld entity))))
         (blaze2-murder-event evt entity killer))
-      (when (and
-              (instance? Cow entity)
-              (@chimera-cows entity))
-        (chimera-cow-murder-event evt entity killer))
+      (when (chimera-cow/is? entity)
+        (chimera-cow/murder-event evt entity killer))
       (when (instance? Giant entity)
         (.setDroppedExp evt 1000))
       (when (instance? Creeper entity)
@@ -1804,16 +1743,6 @@
             (.teleport target (.add block-loc 0.5 1 0.5)))
           (recur (dec depth)))))))
 
-(defn reflect-arrow [evt arrow target]
-  "assumes arrow is an arrow"
-  (let [shooter (.getShooter arrow)]
-    (.setCancelled evt true)
-    (.remove arrow)
-    (let [a (.launchProjectile target Arrow)]
-      (future-call #(do
-                      (Thread/sleep 100)
-                      (.setShooter a shooter)))
-      (.setVelocity a (.multiply (.getVelocity arrow) -1)))))
 
 (defn arrow-damages-entity-event [evt arrow target]
   (if (and
@@ -1825,7 +1754,7 @@
             (not-empty (.getEnchantments chestplate)))))
     (do
       (c/broadcast (.getDisplayName target) "'s enchanted leather chestplate reflects arrows!")
-      (reflect-arrow evt arrow target))
+      (a/reflect-arrow evt arrow target))
     (when-let [shooter (.getShooter arrow)]
       (when (instance? Player shooter)
         (cond
@@ -1991,24 +1920,8 @@
           :else
           (.teleport target shooter))))))
 
-(defn chimera-cows-damage-event [evt cow attacker]
-  (.setDamage evt (min (.getDamage evt) 2))
-  (condp instance? attacker
-    Fireball (.setCancelled evt true)
-    Arrow (reflect-arrow evt attacker cow)
-    nil))
 
-(defn chimera-cow-fall-damage-event [evt cow]
-  (.setCancelled evt true))
 
-(defn chimera-cow-fireball-hit-player [evt player cow fireball]
-  #_(.sendMessage player "Chimeracow's fireball hit!")
-  (case (rand-int 3)
-    0 (let [cart (.spawn (.getWorld player) (.getLocation player) Minecart)]
-        (.setPassenger cart player))
-    1 (.setFireTicks player 200)
-    2 nil
-    3 nil))
 
 (defn entity-damage-event [evt]
   (let [target (.getEntity evt)
@@ -2079,9 +1992,8 @@
                             (prn 2)
                             (c/add-velocity target 0 1 0)))))
         (when (= EntityDamageEvent$DamageCause/FALL (.getCause evt))
-          (if (and (instance? Cow target)
-                         (@chimera-cows target))
-            (chimera-cow-fall-damage-event evt target)
+          (if (chimera-cow/is? target) 
+            (chimera-cow/fall-damage-event evt target)
             (let [loc (.add (.getLocation target) 0 -1 0)]
               (doseq [fence [Material/FENCE Material/NETHER_FENCE]]
                 (when (= fence (.getType (.getBlock loc)))
@@ -2101,9 +2013,8 @@
         (when (and (instance? Player target) (instance? EntityDamageByEntityEvent evt))
           (when (instance? Fireball attacker)
             (when-let [shooter (.getShooter attacker)]
-              (when (instance? Cow shooter)
-                "no need for checking if it's chimera-cow -- cow doesn't shoot."
-                (chimera-cow-fireball-hit-player evt target shooter attacker))))
+              (when (chimera-cow/is? shooter)
+                (chimera-cow/fireball-hit-player evt target shooter attacker))))
           (when-let [skill (reaction-skill-of target)]
             (let [actual-attacker
                   (if (instance? Projectile attacker)
@@ -2123,9 +2034,8 @@
           (when (and (instance? Player attacker) (zombie-player? attacker))
             (zombieze target)
             (.sendMessage attacker "You made a friend")))
-        (when (and (instance? Cow target)
-                   (@chimera-cows target))
-          (chimera-cows-damage-event evt target attacker))))))
+        (when (chimera-cow/is? target)
+          (chimera-cow/damage-event evt target attacker))))))
 
 (defn block-break-event [evt]
   (let [block (.getBlock evt)]
@@ -2168,9 +2078,6 @@
       (.spawn (.getWorld newstate) (.getLocation newstate) Squid)
       (.setCancelled evt true))))
 
-(defn chimera-cow-arrow-hit [entity]
-  (.remove entity))
-
 (defn arrow-hit-event [evt entity]
   (cond
     (instance? Player (.getShooter entity))
@@ -2184,7 +2091,7 @@
       (.createExplosion (.getWorld entity) (.getLocation entity) 1)
       (.remove entity))
     (instance? Cow (.getShooter entity))
-    (chimera-cow-arrow-hit evt)))
+    (chimera-cow/arrow-hit evt)))
         ;(do
         ;  (comment (when (= (.getDisplayName (.getShooter entity)) "sugizou")
         ;             (let [location (.getLocation entity)
