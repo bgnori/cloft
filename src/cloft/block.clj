@@ -2,6 +2,7 @@
 
     (:import [org.bukkit Material])
     (:require [clojure.set])
+    (:import [org.bukkit.util BlockIterator Vector])
     )
 
 
@@ -83,3 +84,59 @@
            Material/SIGN #{:crafted :enterable :gettable}
            Material/WOOD_STAIRS #{:crafted :enterable :combustible :gettable}}]
        (into {} (filter #(clojure.set/subset? c (last %)) data))))
+
+
+(defn place-in-line
+  ([world start end place-fn]
+   (place-in-line world start end place-fn 0))
+  ([world start end place-fn offset-count]
+   (let [m (Math/ceil (.distance start end))
+         unit (.normalize (.add (.clone end) (.multiply (.clone start) -1.0)))
+         ; need yoffest
+         iter (BlockIterator. world (.add start (.multiply (.clone unit) offset-count)) unit 0.0 m)]
+     (loop [done (.hasNext iter)
+            i 0]
+       (place-fn (.next iter) i)
+       (when (.hasNext iter)
+         (recur (.hasNext iter) (inc i)))))))
+
+
+(defn blocks-in-radiaus-xz
+  [world center inner outer]
+  (let [center-block (.getBlockAt world center)
+        grided-cetner-location (.getLocation center-block)
+        grided-cetner-vector (.toVector grided-cetner-location)
+        ux (Vector. 1.0 0.0 0.0)
+        uy (Vector. 0.0 1.0 0.0)
+        uz (Vector. 0.0 0.0 1.0)
+        inner-radius (Math/floor inner)
+        outer-radius (Math/ceil outer)
+        inner-diameter (* 2 inner-radius)
+        outer-diameter (* 2 outer-radius)
+        width outer-diameter
+        corner (.add (.add (.clone grided-cetner-vector) (.multiply (.clone ux) (- outer-radius)))
+                    (.multiply (.clone uz) (- outer-radius)))]
+    (for [dx (range 0 width)
+          dz (range 0 width)
+          :let [v (.add (.add (.clone corner) (.multiply (.clone ux) dx)) (.multiply (.clone uz) dz))]
+          :when (and
+                  (< (.distance grided-cetner-vector v) (Math/ceil outer))
+                  (> (.distance grided-cetner-vector v) (Math/floor inner)))]
+         (.getBlockAt world (.toLocation v world)))))
+
+
+(defn place-in-circle
+   [world inner outer center place-fn]
+   ; with fill. naive way.
+   (doseq [v (blocks-in-radiaus-xz world center inner outer)]
+          (place-fn v 0)))
+
+
+(defn can-build-event [evt]
+  (when (and
+          (#{Material/YELLOW_FLOWER Material/RED_ROSE} (.getMaterial evt))
+          (= Material/FENCE (.getType
+                              (.getBlock (.add (.getLocation (.getBlock evt)) 0 -1 0)))))
+    (.setBuildable evt true)))
+
+

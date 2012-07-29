@@ -8,6 +8,7 @@
   (:require [cloft.recipe ])
   (:require [cloft.player :as player])
   (:require [cloft.block])
+  (:require [cloft.coordinate :as coor])
   ;(:require [clojure.core.match :as m])
   (:require [swank.swank])
   (:require [clojure.string :as s])
@@ -30,7 +31,6 @@
   (:import [org.bukkit.inventory ItemStack])
   (:import [org.bukkit.util Vector])
   (:import [org.bukkit Location Effect])
-  (:import [org.bukkit.util BlockIterator])
   (:import [org.bukkit.event.block Action])
   ;(:require [cloft.zhelpers :as mq])
   )
@@ -760,65 +760,7 @@
 
 (def max-altitude 255)
 
-(defn xz-normalized-vector [v]
-  (.normalize (Vector. (.getX v) 0.0 (.getZ v))))
 
-(defn player-direction [player]
-  (let [world (.getWorld player)
-        loc (.getLocation player)
-        height (Vector. 0.0 1.0 0.0)
-        depth (xz-normalized-vector (.getDirection loc))
-        right-hand (.crossProduct (.clone depth) height)]
-   [depth height right-hand]))
-
-(defn local-coordinate-to-world [player origin-block dx hx rx]
-  (let [[d h r] (player-direction player)
-        loc (.toVector (.getLocation origin-block))]
-    (.add loc (.add (.add (.multiply d dx) (.multiply h hx)) (.multiply r rx)))))
-
-
-(defn place-blocks-in-line
-  ([world start end place-fn]
-   (place-blocks-in-line world start end place-fn 0))
-  ([world start end place-fn offset-count]
-   (let [m (Math/ceil (.distance start end))
-         unit (.normalize (.add (.clone end) (.multiply (.clone start) -1.0)))
-         ; need yoffest
-         iter (BlockIterator. world (.add start (.multiply (.clone unit) offset-count)) unit 0.0 m)]
-     (loop [done (.hasNext iter)
-            i 0]
-       (place-fn (.next iter) i)
-       (when (.hasNext iter)
-         (recur (.hasNext iter) (inc i)))))))
-
-(defn blocks-in-radiaus-xz
-  [world center inner outer]
-  (let [center-block (.getBlockAt world center)
-        grided-cetner-location (.getLocation center-block)
-        grided-cetner-vector (.toVector grided-cetner-location)
-        ux (Vector. 1.0 0.0 0.0)
-        uy (Vector. 0.0 1.0 0.0)
-        uz (Vector. 0.0 0.0 1.0)
-        inner-radius (Math/floor inner)
-        outer-radius (Math/ceil outer)
-        inner-diameter (* 2 inner-radius)
-        outer-diameter (* 2 outer-radius)
-        width outer-diameter
-        corner (.add (.add (.clone grided-cetner-vector) (.multiply (.clone ux) (- outer-radius)))
-                    (.multiply (.clone uz) (- outer-radius)))]
-    (for [dx (range 0 width)
-          dz (range 0 width)
-          :let [v (.add (.add (.clone corner) (.multiply (.clone ux) dx)) (.multiply (.clone uz) dz))]
-          :when (and
-                  (< (.distance grided-cetner-vector v) (Math/ceil outer))
-                  (> (.distance grided-cetner-vector v) (Math/floor inner)))]
-         (.getBlockAt world (.toLocation v world)))))
-
-(defn place-blocks-in-circle
-   [world inner outer center place-fn]
-   ; with fill. naive way.
-   (doseq [v (blocks-in-radiaus-xz world center inner outer)]
-          (place-fn v 0)))
 
 (defn summon-x
   ([pos world creature] (summon-x pos world creature 1))
@@ -829,7 +771,7 @@
   (.damage player (/ (.getHealth player) 2))
   (.setFoodLevel player 0)
   (let [world (.getWorld player)
-        spawn-at  (local-coordinate-to-world player block 10.0 0.0 0.0)]
+        spawn-at  (coor/local-to-world player block 10.0 0.0 0.0)]
     (.strikeLightningEffect world (.toLocation spawn-at world))
     (summon-x spawn-at world Giant)
     (c/broadcast (.getDisplayName player) " has summoned Giant!!")))
@@ -837,9 +779,9 @@
 (defn summon-residents-of-nether [player block]
   (let [world (.getWorld player)
         loc (.toVector (.getLocation player))
-        pos1 (local-coordinate-to-world player block 15.0 1.0 -5.0)
-        pos2 (local-coordinate-to-world player block 15.0 1.0 0.0)
-        pos3 (local-coordinate-to-world player block 15.0 1.0 5.0)
+        pos1 (coor/local-to-world player block 15.0 1.0 -5.0)
+        pos2 (coor/local-to-world player block 15.0 1.0 0.0)
+        pos3 (coor/local-to-world player block 15.0 1.0 5.0)
         fire-effect (fn [v i]
                       (cloft-scheduler/settimer
                         (* 4 i)
@@ -859,7 +801,7 @@
               (cloft-scheduler/settimer
                 1
                 (fn []
-                  (place-blocks-in-line world (.clone loc) (.clone pos) fire-effect 2)
+                  (cloft.block/place-in-line world (.clone loc) (.clone pos) fire-effect 2)
                   (sure-explosion-at (.clone pos) world 60)
                   (summon-x pos world Blaze 65)
                   (summon-x loc world PigZombie 65)
@@ -869,7 +811,7 @@
             (summon-set-of-evils-at pos1 loc world)
             (summon-set-of-evils-at pos2 loc world)
             (summon-set-of-evils-at pos3 loc world)
-            (summon-x (local-coordinate-to-world player block -5.0 0.5 0.0) world Creeper 80) ;hehehe
+            (summon-x (coor/local-to-world player block -5.0 0.5 0.0) world Creeper 80) ;hehehe
             (c/broadcast (.getDisplayName player) " has summoned hurd of Blaze, PigZombie and Ghast!!"))))
 
 (def active-fusion-wall(atom {}))
@@ -879,31 +821,31 @@
 (defn alchemy-fusion-wall [player block]
   (let [world (.getWorld player)
         loc (.toVector (.getLocation player))
-        bottom (local-coordinate-to-world player block 15.0 0.0 0.0)
-        top (local-coordinate-to-world player block 15.0 6.0 0.0)]
+        bottom (coor/local-to-world player block 15.0 0.0 0.0)
+        top (coor/local-to-world player block 15.0 6.0 0.0)]
     (letfn [(place-cobblestones [v i]
               (cloft-scheduler/settimer (* 4 i)
                                        #(when (= Material/AIR (.getType v))
                                           (.setType v Material/COBBLESTONE))))]
       (.strikeLightningEffect world (.toLocation bottom world))
-      (place-blocks-in-line world bottom top place-cobblestones)
+      (cloft.block/place-in-line world bottom top place-cobblestones)
       (if-let [prev (active-fusion-wall-of player)]
         (let [[eb et] prev]
-          (place-blocks-in-line world eb bottom place-cobblestones)
-          (place-blocks-in-line world et top place-cobblestones))
+          (cloft.block/place-in-line world eb bottom place-cobblestones)
+          (cloft.block/place-in-line world et top place-cobblestones))
         (prn "nothing to connect."))
       (swap! active-fusion-wall assoc (.getDisplayName player) [bottom top]))))
 
 
 (defn fusion-floor [player block]
   (let [world (.getWorld player)
-        start-left (local-coordinate-to-world player block 0.0 0.0 -1.0)
+        start-left (coor/local-to-world player block 0.0 0.0 -1.0)
         start-center (.toVector (.getLocation player))
-        start-right (local-coordinate-to-world player block 0.0 0.0 1.0)
+        start-right (coor/local-to-world player block 0.0 0.0 1.0)
         distance (min (+ 10.0 (* 2 (.getLevel player))) 60.0)
-        end-left (local-coordinate-to-world player block distance 0.0 -1.0)
-        end-center (local-coordinate-to-world player block distance 0.0 0.0)
-        end-right (local-coordinate-to-world player block distance 0.0 1.0)
+        end-left (coor/local-to-world player block distance 0.0 -1.0)
+        end-center (coor/local-to-world player block distance 0.0 0.0)
+        end-right (coor/local-to-world player block distance 0.0 1.0)
         block-floor (fn [v i]
                       (cloft-scheduler/settimer
                         (* 4 i)
@@ -911,9 +853,9 @@
                            (when (= 0 (rand-int 6))
                              (.strikeLightningEffect world (.getLocation v)))
                            (.setType v Material/COBBLESTONE))))]
-    (place-blocks-in-line world start-left end-left block-floor 2)
-    (place-blocks-in-line world start-center end-center block-floor 2)
-    (place-blocks-in-line world start-right end-right block-floor 2)))
+    (cloft.block/place-in-line world start-left end-left block-floor 2)
+    (cloft.block/place-in-line world start-center end-center block-floor 2)
+    (cloft.block/place-in-line world start-right end-right block-floor 2)))
 
 (defn make-redstone-for-livings [player block]
   (let [world (.getWorld player)]
@@ -925,11 +867,11 @@
 
 (defn erupt-volcano [player block]
   (let [world (.getWorld player)
-        crator-vector (local-coordinate-to-world player block 40.0 20.0 0.0)
+        crator-vector (coor/local-to-world player block 40.0 20.0 0.0)
         crator-location (.toLocation crator-vector world)]
     (.strikeLightningEffect world crator-location)
     (.setType (.getBlockAt world crator-location) Material/LAVA)
-    (place-blocks-in-circle
+    (cloft.block/place-in-circle
       world 10 14
       crator-location
       (fn [v i]
@@ -937,10 +879,10 @@
 
 (defn close-air-support [player block]
   (let [world (.getWorld player)
-        xz (local-coordinate-to-world player block 0.0 0.0 0.0)
+        xz (coor/local-to-world player block 0.0 0.0 0.0)
         center-vector (.setY  (.clone xz) max-altitude)
         center-location (.toLocation center-vector world)]
-    (doseq [v (blocks-in-radiaus-xz world center-location 20 70)]
+    (doseq [v (cloft.block/blocks-in-radiaus-xz world center-location 20 70)]
       (when (= (rand-int 30) 1)
         (cloft-scheduler/settimer
           (rand-int 300)
@@ -951,11 +893,11 @@
 
 (defn earthen-pipe [player block]
   (let [world (.getWorld player)
-        center-vector (local-coordinate-to-world player block 10.0 0.0 0.0)
+        center-vector (coor/local-to-world player block 10.0 0.0 0.0)
         center-location (.toLocation center-vector world)
         uy (Vector. 0 1 0)]
     (loop [h 0 inner 5.0 outer 7.0]
-      (place-blocks-in-circle
+      (cloft.block/place-in-circle
         world inner outer
         (.toLocation (.add (.clone center-vector) (.multiply (.clone uy) h)) world)
         (fn [v i]
@@ -2025,12 +1967,6 @@
           ;(instance? Snowball entity) (.strikeLightning (.getWorld entity) (.getLocation entity))
           nil)))
 
-(defn block-can-build-event [evt]
-  (when (and
-          (#{Material/YELLOW_FLOWER Material/RED_ROSE} (.getMaterial evt))
-          (= Material/FENCE (.getType
-                              (.getBlock (.add (.getLocation (.getBlock evt)) 0 -1 0)))))
-    (.setBuildable evt true)))
 
 (defn block-dispense-event [evt]
   (when (= Material/SEEDS (.getType (.getItem evt)))
@@ -2166,6 +2102,9 @@
     (.teleport (c/ujm) @pre-stalk)
     (.showPlayer player (c/ujm))))
 
+
+(defn block-can-build-event [evt]
+  (cloft.block/can-build-event evt))
 
 
 (defonce swank* nil)
