@@ -1954,32 +1954,6 @@
           (c/add-velocity player 0 0.6 0))))
     (transport/cauldron-teleport player)))
 
-;(defn vehicle-enter-event* [evt]
-;  (let [vehicle (.getVehicle evt)
-;        entity (.getEntered evt)
-;        rail (.getBlock (.getLocation vehicle))
-;        block-under (.getBlock (.add (.getLocation vehicle) 0 -1 0))]
-;    (when (and
-;            (instance? Player entity)
-;            (= (.getType rail) Material/RAILS)
-;            (= (.getType block-under) Material/LAPIS_BLOCK))
-;      (let [direction (.getDirection (.getNewData (.getType rail) (.getData rail)))
-;            diff (cond
-;                   (= org.bukkit.block.BlockFace/SOUTH direction) (Vector. -1 0 0)
-;                   (= org.bukkit.block.BlockFace/NORTH direction) (Vector. 1 0 0)
-;                   (= org.bukkit.block.BlockFace/WEST direction) (Vector. 0 0 1)
-;                   (= org.bukkit.block.BlockFace/EAST direction) (Vector. 0 0 -1))
-;            destination (first (filter
-;                                 #(= (.getType %) Material/LAPIS_BLOCK)
-;                                 (map
-;                                   #(.getBlock (.add (.clone (.getLocation block-under)) (.multiply (.clone diff) %)))
-;                                   (range 3 100))))]
-;        (when destination
-;          (.teleport vehicle (.add (.getLocation destination) 0 3 0)))))))
-;
-;(defn vehicle-enter-event []
-;  (c/auto-proxy [Listener] []
-;                (onVehicleEnter [evt] (vehicle-enter-event* evt))))
 
 (comment (defn enderman-pickup-event* [evt]
   (prn 'epe)))
