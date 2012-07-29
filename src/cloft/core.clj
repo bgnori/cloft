@@ -9,6 +9,7 @@
   (:require [cloft.player :as player])
   (:require [cloft.block])
   (:require [cloft.coordinate :as coor])
+  (:require [cloft.transport :as transport])
   ;(:require [clojure.core.match :as m])
   (:require [swank.swank])
   (:require [clojure.string :as s])
@@ -57,40 +58,6 @@
 
 (def last-vertical-shots (atom {}))
 
-(defn player-teleport-machine [evt player]
-  (when (and
-          (= (.getWorld player) world)
-          (< (.distance ujm/place2 (.getLocation player)) 1))
-    (c/lingr (str (.getDisplayName player) " is teleporting..."))
-    (.setTo evt ujm/place3))
-  (when (and
-          (= (.getWorld player) world)
-          (< (.distance ujm/place1 (.getLocation player)) 1)
-          (.isLoaded (.getChunk ujm/place4)))
-    (c/lingr (str (.getDisplayName player) " is teleporting..."))
-    (.setTo evt ujm/place4))
-  (when (and
-          (= (.getWorld player) world)
-          (< (.distance ujm/place5 (.getLocation player)) 1)
-          (.isLoaded (.getChunk ujm/place6)))
-    (c/lingr (str (.getDisplayName player) " is teleporting..."))
-    (.setTo evt ujm/place6))
-  (when (and
-          (= (.getWorld player) world)
-          (or
-            (< (.distance ujm/place9 (.getLocation player)) 1)
-            (< (.distance ujm/place10 (.getLocation player)) 1))
-          (.isLoaded (.getChunk ujm/place-main)))
-    (c/lingr (str (.getDisplayName player) " is teleporting..."))
-    (.setTo evt ujm/place-main))
-  (when (and
-          (= (.getWorld player) world)
-          (< (.distance ujm/place7 (.getLocation player)) 1))
-    (let [death-point (player/death-location-of player)]
-      (when death-point
-        (.isLoaded (.getChunk death-point)) ; for side-effect
-        (c/lingr (str (.getDisplayName player) " is teleporting to the last death place..."))
-        (.setTo evt death-point)))))
 
 (defn player-super-jump [evt player]
   (let [name (.getDisplayName player)]
@@ -140,7 +107,7 @@
             (.sendMessage player "You can't leave")
             (.setTo evt (.add (.getFrom evt) 0 0.5 0))))))
     (comment (when (c/jumping? evt)
-      (player-teleport-machine evt player)))
+      (transport/player-teleport-machine evt player)))
     (comment (when (walking? evt)
       (let [l (.getLocation player)
             b-up (.getBlock l)
@@ -925,12 +892,6 @@
         (alchemy player block)
         (prn "no effect is defined for " block)))))
 
-(defn teleport-machine [player block block-against]
-  (when (= Material/WATER (.getType block))
-    (let [wools (for [x [-1 0 1] z [-1 0 1] :when (or (not= x 0) (not= z 0))]
-                  (.getType (.getBlock
-                              (.add (.clone (.getLocation block-against)) x 0 z))))]
-      nil)))
 
 (defn block-damage-event [evt]
   (let [player (.getPlayer evt)]
@@ -964,7 +925,7 @@
       (pickaxe-skillchange player block (.getBlockAgainst evt))
       (reaction-skillchange player block (.getBlockAgainst evt))
       (invoke-alchemy player block (.getBlockAgainst evt))
-      (teleport-machine player block (.getBlockAgainst evt))
+      (transport/teleport-machine player block (.getBlockAgainst evt))
       (comment (prn (vector-from-to block player))
                (.setVelocity player (vector-from-to player block))
                (doseq [entity (.getNearbyEntities player 4 4 4)]
@@ -1024,36 +985,10 @@
   (.setFoodLevel target (dec (.getFoodLevel target)))
   (.setGameMode target org.bukkit.GameMode/SURVIVAL))
 
-(defn teleport-machine? [loc]
-  (=
-    (for [x [-1 0 1] z [-1 0 1]]
-      (if (and (= x 0) (= z 0))
-        'any
-        (.getType (.getBlock (.add (.clone loc) x 0 z)))))
-    (list Material/GLOWSTONE Material/GLOWSTONE Material/GLOWSTONE
-          Material/GLOWSTONE 'any Material/GLOWSTONE
-          Material/GLOWSTONE Material/GLOWSTONE Material/GLOWSTONE)))
 
-(defn teleport-up [entity block]
-  (when (#{Material/STONE_PLATE Material/WOOD_PLATE} (.getType block))
-    (let [entity-loc (.getLocation entity)
-          loc (.add (.getLocation block) 0 -1 0)]
-      (when (teleport-machine? loc)
-        (when (instance? Player entity)
-          (.sendMessage entity "teleport up!"))
-        (future-call #(let [newloc (.add (.getLocation entity) 0 30 0)]
-                        (Thread/sleep 10)
-                        (condp = (.getType block)
-                          Material/STONE_PLATE (.teleport entity newloc)
-                          Material/WOOD_PLATE (c/add-velocity entity 0 1.5 0)
-                          nil)
-                        (.playEffect (.getWorld entity-loc) (.add entity-loc 0 1 0) Effect/BOW_FIRE nil)
-                        (.playEffect (.getWorld newloc) newloc Effect/BOW_FIRE nil)
-                        (.playEffect (.getWorld entity-loc) entity-loc Effect/ENDER_SIGNAL nil)
-                        (.playEffect (.getWorld newloc) newloc Effect/ENDER_SIGNAL nil)))))))
 
 (defn entity-interact-physical-event [evt entity]
-  (teleport-up entity (.getBlock evt)))
+  (transport/teleport-up entity (.getBlock evt)))
 
 (defn entity-interact-event [evt]
   (let [entity (.getEntity evt)]
@@ -1105,7 +1040,7 @@
         (elevator player block))
 
       (= (.getAction evt) Action/PHYSICAL)
-      (teleport-up player block)
+      (transport/teleport-up player block)
       (and
         (= (.getAction evt) Action/RIGHT_CLICK_BLOCK)
         (= (.getType block) Material/CAKE_BLOCK))
