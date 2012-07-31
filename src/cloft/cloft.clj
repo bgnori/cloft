@@ -164,3 +164,9 @@
                    PotionType/INSTANT_HEAL PotionType/POISON PotionType/REGEN
                    PotionType/SLOWNESS PotionType/SPEED PotionType/STRENGTH
                    PotionType/WATER PotionType/WEAKNESS])
+
+(defn skill2name [skill]
+  (cond
+    (fn? skill) (second (re-find #"\$.*?[_-]skill[_-](.*?)@" (str skill)))
+    (nil? skill) nil
+    :else (str skill)))

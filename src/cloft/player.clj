@@ -1,5 +1,7 @@
 (ns cloft.player
     (:require [cloft.cloft :as c])
+    (:require [cloft.arrow-skill :as arrow-skill])
+    (:require [cloft.reaction-skill :as reaction-skill])
     (:import [org.bukkit.entity Player])
     )
 
@@ -81,10 +83,6 @@
 ; 
 ;
 
-(defn arrow-skill-of [player] nil) ; dummy
-(defn reaction-skill-of-without-consume [player] nil) ; dummy
-
-(defn skill2name [skill] nil) ; dummy
 
 (defn player-inspect [player verbose?]
   (format
@@ -98,6 +96,6 @@
                             {'MR (@murder-record (.getDisplayName player))})
                           {'HP (.getHealth player)
                            'MP (.getFoodLevel player)
-                           'AS (skill2name (arrow-skill-of player))
-                           'RS (skill2name (reaction-skill-of-without-consume player))}))))))
+                           'AS (c/skill2name (arrow-skill/of player))
+                           'RS (c/skill2name (reaction-skill/of-without-consume player))}))))))
 

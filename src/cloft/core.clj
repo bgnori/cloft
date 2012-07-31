@@ -10,7 +10,9 @@
   (:require [cloft.block])
   (:require [cloft.coordinate :as coor])
   (:require [cloft.transport :as transport])
+  (:require [cloft.skill :as skill])
   (:require [cloft.arrow-skill :as arrow-skill])
+  (:require [cloft.reaction-skill :as reaction-skill])
   ;(:require [clojure.core.match :as m])
   (:require [swank.swank])
   (:require [clojure.string :as s])
@@ -129,25 +131,6 @@
 (defn pickaxe-skill-of [player]
   (get @pickaxe-skill (.getDisplayName player)))
 
-(defn skill2name [skill]
-  (cond
-    (fn? skill) (second (re-find #"\$.*?[_-]skill[_-](.*?)@" (str skill)))
-    (nil? skill) nil
-    :else (str skill)))
-
-(def reaction-skill (atom {}))
-(defn reaction-skill-of [player]
-  (when-let [[skill num-rest] (get @reaction-skill (.getDisplayName player))]
-    (if (= 0 num-rest)
-      (do
-        (c/broadcast (format "%s lost reactio-skill %s" (.getDisplayName player) (skill2name skill)))
-        (swap! reaction-skill assoc (.getDisplayName player) nil)
-        nil)
-      (do
-        (swap! reaction-skill assoc (.getDisplayName player) [skill (dec num-rest)])
-        skill))))
-(defn reaction-skill-of-without-consume [player]
-  (first (get @reaction-skill (.getDisplayName player))))
 
 (def bowgun-players (atom #{"ujm"}))
 (defn add-bowgun-player [name]
@@ -348,84 +331,6 @@
 (defn entity-explosion-prime-event [evt]
   nil)
 
-(defn freeze-for-20-sec [target]
-  (when-not (.isDead target)
-    (let [loc (.getLocation (.getBlock (.getLocation target)))]
-      (doseq [y [0 1]]
-        (doseq [[x z] [[-1 0] [1 0] [0 -1] [0 1]]]
-          (let [block (.getBlock (.add (.clone loc) x y z))]
-            (when (#{Material/AIR Material/SNOW} (.getType block))
-              (.setType block Material/GLASS)))))
-      (doseq [y [-1 2]]
-        (let [block (.getBlock (.add (.clone loc) 0 y 0))]
-          (when (#{Material/AIR Material/SNOW} (.getType block))
-            (.setType block Material/GLASS))))
-      (future-call #(do
-                      (Thread/sleep 1000)
-                      (when-not (.isDead target)
-                        (.teleport target (.add (.clone loc) 0.5 0.0 0.5)))))
-      (future-call #(do
-                      (Thread/sleep 20000)
-                      (doseq [y [0 1]]
-                        (doseq [[x z] [[-1 0] [1 0] [0 -1] [0 1]]]
-                          (let [block (.getBlock (.add (.clone loc) x y z))]
-                            (when (= (.getType block) Material/GLASS)
-                              (.setType block Material/AIR)))))
-                      (doseq [y [-1 2]]
-                        (let [block (.getBlock (.add (.clone loc) 0 y 0))]
-                          (when (= (.getType block) Material/GLASS)
-                            (.setType block Material/AIR)))))))))
-
-(defn reaction-skill-ice [you by]
-  (freeze-for-20-sec by)
-  (c/lingr (str "counter attack with ice by " (.getDisplayName you) " to " (c/entity2name by))))
-
-(defn reaction-skill-knockback [you by]
-  (let [direction (.multiply (.normalize (.toVector (.subtract (.getLocation by) (.getLocation you)))) 2)]
-    (c/add-velocity by (.getX direction) (.getY direction) (.getZ direction))))
-
-(defn reaction-skill-fire [you by]
-  (.setFireTicks by 100))
-
-(defn reaction-skill-golem [you by]
-  (let [golem (.spawn (.getWorld by) (.getLocation by) IronGolem)]
-    (.setTarget golem by)
-    (future-call #(do
-                    (Thread/sleep 10000)
-                    (.remove golem))))
-  (.sendMessage you "a golem helps you!"))
-
-(defn reaction-skill-wolf [you by]
-  (let [wolf (.spawn (.getWorld by) (.getLocation by) Wolf)]
-    (.setTamed wolf true)
-    (.setOwner wolf you)
-    (.setTarget wolf by)
-    (future-call #(do
-                    (Thread/sleep 10000)
-                    (.remove wolf))))
-  (.sendMessage you "a wolf helps you!"))
-
-(defn reaction-skill-teleport [you by]
-  (letfn [(find-place [from range]
-            (let [candidates
-                  (for [x range y range z range :when (> y 5)]
-                    (.add (.clone (.getLocation from)) x y z))
-                  good-candidates
-                  (filter
-                    #(and
-                       (not= Material/AIR
-                             (.getType (.getBlock (.add (.clone %) 0 -1 0))))
-                       (= Material/AIR (.getType (.getBlock %)))
-                       (= Material/AIR
-                          (.getType (.getBlock (.add (.clone %) 0 1 0)))))
-                    candidates)]
-              (rand-nth good-candidates)))]
-    (.sendMessage you
-      (str "You got damage by " (c/entity2name by) " and escaped."))
-    (.teleport you (find-place you (range -10 10)))))
-
-(defn reaction-skill-poison [you by]
-  (.addPotionEffect by (PotionEffect. PotionEffectType/POISON 200 2)))
 
 ;(defn build-long [block block-against]
 ;  (comment (when (= (.getType block) (.getType block-against))
@@ -449,21 +354,19 @@
 
 (defn reaction-skillchange [player block block-against]
   (when (blazon? Material/LOG block-against)
-    (let [table {Material/RED_ROSE [reaction-skill-fire "FIRE"]
-                 Material/YELLOW_FLOWER [reaction-skill-teleport "TELEPORT"]
-                 Material/COBBLESTONE [reaction-skill-knockback "KNOCKBACK"]
-                 Material/DIRT [reaction-skill-wolf "WOLF"]
-                 Material/IRON_BLOCK [reaction-skill-golem "GOLEM"]
-                 Material/SNOW_BLOCK [reaction-skill-ice "ICE"]
-                 Material/RED_MUSHROOM [reaction-skill-poison "POISON"]}]
+    (let [table {Material/RED_ROSE [reaction-skill/fire "FIRE"]
+                 Material/YELLOW_FLOWER [reaction-skill/teleport "TELEPORT"]
+                 Material/COBBLESTONE [reaction-skill/knockback "KNOCKBACK"]
+                 Material/DIRT [reaction-skill/wolf "WOLF"]
+                 Material/IRON_BLOCK [reaction-skill/golem "GOLEM"]
+                 Material/SNOW_BLOCK [reaction-skill/ice "ICE"]
+                 Material/RED_MUSHROOM [reaction-skill/poison "POISON"]}]
       (when-let [skill-name (table (.getType block))]
         (if (= 0 (.getLevel player))
           (.sendMessage player "Your level is 0. You can't set reaction skill yet.")
-          (let [l (.getLevel player)]
+          (let [lv (.getLevel player)]
             (.playEffect (.getWorld block) (.getLocation block) Effect/MOBSPAWNER_FLAMES nil)
-            (c/broadcast (.getDisplayName player) " changed reaction-skill to " (last skill-name))
-            (.sendMessage player (format "You can use the reaction skill for %d times" l))
-            (swap! reaction-skill assoc (.getDisplayName player) [(first skill-name) l])))))))
+            (reaction-skill/set-skill lv player skill-name)))))))
 
 (defn arrow-skillchange [player block block-against]
   (when (blazon? Material/STONE (.getBlock (.add (.getLocation block) 0 -1 0)))
@@ -1312,10 +1215,10 @@
           (= arrow-skill/explosion (arrow-skill/of shooter))
           (.damage target 10 shooter)
           (= arrow-skill/ice (arrow-skill/of shooter))
-          (freeze-for-20-sec target)
+          (skill/freeze-for-20-sec target)
           (= 'trap (arrow-skill/of shooter))
           ((rand-nth [chain-entity
-                      (comp freeze-for-20-sec first list)
+                      (comp skill/freeze-for-20-sec first list)
                       digg-entity])
              target shooter)
           (= 'digg (arrow-skill/of shooter))
@@ -1365,7 +1268,7 @@
                    (.getDisplayName target)
                    (c/entity2name target)))))
           (= 'arrow-skill/poison (arrow-skill/of shooter))
-          (reaction-skill-poison nil target)
+          (reaction-skill/poison nil target)
           (= 'exp (arrow-skill/of shooter))
           (.damage shooter 2)
           (= 'super-knockback (arrow-skill/of shooter))
@@ -1560,18 +1463,8 @@
             (when-let [shooter (.getShooter attacker)]
               (when (chimera-cow/is? shooter)
                 (chimera-cow/fireball-hit-player evt target shooter attacker))))
-          (when-let [skill (reaction-skill-of target)]
-            (let [actual-attacker
-                  (if (instance? Projectile attacker)
-                    (.getShooter attacker)
-                    attacker)]
-              (when (and (not= actual-attacker target)
-                         (not (instance? Wolf actual-attacker))
-                         (not (instance? TNTPrimed actual-attacker))
-                         (not (and
-                           (instance? Player actual-attacker)
-                           (= arrow-skill/diamond (arrow-skill/of actual-attacker)))))
-                (skill target actual-attacker))))
+          (when-let [skill (reaction-skill/of target)]
+            (reaction-skill/redirect skill attacker target))
           (when (and (instance? Zombie attacker) (not (instance? PigZombie attacker)))
             (if (player/zombie? target)
               (.setCancelled evt true)
