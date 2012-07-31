@@ -14,6 +14,7 @@
   (:require [cloft.arrow-skill :as arrow-skill])
   (:require [cloft.reaction-skill :as reaction-skill])
   (:require [cloft.creeper :as creeper])
+  (:require [cloft.pickaxe-skill :as pickaxe-skill])
   ;(:require [clojure.core.match :as m])
   (:require [swank.swank])
   (:require [clojure.string :as s])
@@ -128,9 +129,6 @@
 
 
 
-(def pickaxe-skill (atom {}))
-(defn pickaxe-skill-of [player]
-  (get @pickaxe-skill (.getDisplayName player)))
 
 
 (def bowgun-players (atom #{"ujm"}))
@@ -414,11 +412,9 @@
                  Material/STONE ['pickaxe-skill-stone "STONE"]}]
       (when-let [skill-name (table (.getType block))]
         (.playEffect (.getWorld block) (.getLocation block) Effect/MOBSPAWNER_FLAMES nil)
-        (c/broadcast (.getDisplayName player) " changed pickaxe-skill to " (last skill-name))
-        (swap! pickaxe-skill assoc (.getDisplayName player) (first skill-name))))))
+        (pickaxe-skill/set-skill player skill-name)))))
 
 (def max-altitude 255)
-
 
 
 (defn summon-x
@@ -589,11 +585,8 @@
   (let [player (.getPlayer evt)]
     (when (and
             (c/pickaxes (.getType (.getItemInHand player)))
-            (= 'pickaxe-skill-stone (pickaxe-skill-of player)))
-      (if (= Material/STONE (.getType (.getBlock evt)))
-        (.setInstaBreak evt true)
-        (when (not= 0 (rand-int 1000))
-          (.setCancelled evt true))))))
+            (= 'pickaxe-skill-stone (pickaxe-skill/of player)))
+      (pickaxe-skill/stone player evt))))
 
 (defn block-piston-extend-event [evt]
   "pushes the entity strongly"
@@ -856,12 +849,8 @@
                         (.remove item))))
       (and
         (c/pickaxes (.getType itemstack))
-        (= 'pickaxe-skill-teleport (pickaxe-skill-of player)))
-      (future-call
-        #(do
-           (Thread/sleep 2000)
-           (when-not (.isDead item)
-             (c/teleport-without-angle player (.getLocation item))))))))
+        (= 'pickaxe-skill-teleport (pickaxe-skill/of player)))
+      (pickaxe-skill/teleport player item))))
 
 (defn player-entity-with-string-event [evt player target]
   (c/consume-item player)
@@ -1374,8 +1363,8 @@
             (spawn-block-generater target))
           (when-let [item (.getItemInHand attacker)]
             (when (c/pickaxes (.getType item))
-              (when (= 'pickaxe-skill-fire (pickaxe-skill-of attacker))
-                (.setFireTicks target 200))))
+              (when (= 'pickaxe-skill-fire (pickaxe-skill/of attacker))
+                (pickaxe-skill/fire attacker target))))
           (when (and (instance? Blaze target)
                      (= "world" (.getName (.getWorld target))))
             (blaze2-get-damaged evt target))
@@ -1441,25 +1430,9 @@
             (.damage player (rand-int 5)))
           c/pickaxes
           (when (and
-                  (= 'pickaxe-skill-ore (pickaxe-skill-of player))
+                  (= 'pickaxe-skill-ore (pickaxe-skill/of player))
                   (= Material/STONE (.getType block)))
-            (letfn [(f [blocktype]
-                      (.setType block blocktype)
-                      (.setCancelled evt true)
-                      (.playEffect (.getWorld block) (.getLocation block) Effect/MOBSPAWNER_FLAMES nil))]
-              (cond
-                (= 0 (rand-int 10)) (f Material/COAL_ORE)
-                (= 0 (rand-int 20)) (f Material/IRON_ORE)
-                (= 0 (rand-int 30)) (f Material/REDSTONE_ORE)
-                (= 0 (rand-int 40)) (f Material/LAPIS_ORE)
-                (= 0 (rand-int 50)) (f Material/GOLD_ORE)
-                (= 0 (rand-int 1000)) (f Material/DIAMOND_ORE)
-                (= 0 (rand-int 300)) (f Material/GLOWSTONE)
-                (= 0 (rand-int 1000)) (f Material/LAPIS_BLOCK)
-                (= 0 (rand-int 1500)) (f Material/GOLD_BLOCK)
-                (= 0 (rand-int 2000)) (f Material/GOLD_BLOCK)
-                (= 0 (rand-int 50000)) (f Material/DIAMOND_BLOCK)
-                :else nil)))
+            (pickaxe-skill/ore block evt))
           nil)))))
 
 (defn block-grow-event [evt]
