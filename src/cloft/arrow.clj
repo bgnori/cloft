@@ -2,6 +2,11 @@
     (:import [org.bukkit.entity Arrow])
     )
 
+(defn velocity-vertical? [arrow]
+  (let [v (.getVelocity arrow)]
+    ;(prn 'arrow/velocity-vertical? v)
+    (and (> 0.1 (Math/abs (.getX v)))
+         (> 0.1 (Math/abs (.getZ v))))))
 
 (defn reflect-arrow [evt arrow target]
   "assumes arrow is an arrow"

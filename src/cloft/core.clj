@@ -4,7 +4,7 @@
   (:require [cloft.scheduler :as cloft-scheduler])
   (:require [cloft.sanctuary :as sanctuary])
   (:require [cloft.chimera-cow :as chimera-cow])
-  (:require [cloft.arrow :as a])
+  (:require [cloft.arrow :as arrow-ns])
   (:require [cloft.recipe ])
   (:require [cloft.player :as player])
   (:require [cloft.block])
@@ -15,6 +15,7 @@
   (:require [cloft.reaction-skill :as reaction-skill])
   (:require [cloft.creeper :as creeper])
   (:require [cloft.pickaxe-skill :as pickaxe-skill])
+  (:require [cloft.teamplay :as teamplay])
   ;(:require [clojure.core.match :as m])
   (:require [swank.swank])
   (:require [clojure.string :as s])
@@ -59,9 +60,6 @@
 ;  )
 
 (def world (Bukkit/getWorld "world"))
-
-
-(def last-vertical-shots (atom {}))
 
 
 (defn player-super-jump [evt player]
@@ -135,41 +133,6 @@
 (defn add-bowgun-player [name]
   (swap! bowgun-players conj name))
 
-(defn arrow-velocity-vertical? [arrow]
-  (let [v (.getVelocity arrow)]
-    ;(prn 'arrow-velocity-vertical? v)
-    (and (> 0.1 (Math/abs (.getX v)))
-         (> 0.1 (Math/abs (.getZ v))))))
-
-(defn thunder-mobs-around [player amount]
-  (doseq [x (filter
-              #(instance? Monster %)
-              (.getNearbyEntities player 20 20 20))]
-    (Thread/sleep (rand-int 1000))
-    (.strikeLightningEffect (.getWorld x) (.getLocation x))
-    (.damage x amount)))
-
-(defn enough-previous-shots-by-players? [triggered-by threshold]
-  (let [locs (vals @last-vertical-shots)]
-    ;(prn enough-previous-shots-by-players?)
-    ;(prn locs)
-    (<= threshold
-      (count (filter
-               #(> 10.0 ; radius of 10.0
-                   (.distance (.getLocation triggered-by) %))
-               locs)))))
-
-(defn check-and-thunder [triggered-by]
-  (when (enough-previous-shots-by-players? triggered-by 3)
-    (future-call #(thunder-mobs-around triggered-by 20))))
-    ; possiblly we need to flush last-vertical-shots, not clear.
-    ; i.e. 3 shooters p1, p2, p3 shoot arrows into mid air consecutively, how often thuders(tn)?
-    ; A.
-    ; p1, p2, p3, p1, p2, p3,
-    ;         t1          t2
-    ; B.
-    ; p1, p2, p3, p1, p2, p3,
-    ;         t1, t2, t3, t4
 
 (defn fly-with-check [projectile fn]
   (cloft-scheduler/settimer
@@ -281,14 +244,9 @@
           "arrow loc: "(.getLocation arrow)
           "arrow v: "(.getVelocity arrow)
           "arrow v/|v|: " (.multiply (.getVelocity arrow) (/ 1 (.length (.getVelocity arrow)))))))
-      (when (arrow-velocity-vertical? (.getProjectile evt))
-        (prn last-vertical-shots)
-        (swap! last-vertical-shots assoc (.getDisplayName shooter) (.getLocation shooter))
-        (prn last-vertical-shots)
-        (future-call #(let [shooter-name (.getDisplayName shooter)]
-                        (check-and-thunder shooter)
-                        (Thread/sleep 1000)
-                        (swap! last-vertical-shots dissoc shooter-name))))
+      (when (arrow-ns/velocity-vertical? (.getProjectile evt))
+        (teamplay/update-last-vertical-shot shooter)
+        (teamplay/wait-for-other-vertical-shot shooter))
       #_(when (= 'arrow-skill/tntmissile (arrow-skill/of shooter))
         (let [inventory (.getInventory shooter)
               arrow (.getProjectile evt)]
@@ -1152,7 +1110,7 @@
             (not-empty (.getEnchantments chestplate)))))
     (do
       (c/broadcast (.getDisplayName target) "'s enchanted leather chestplate reflects arrows!")
-      (a/reflect-arrow evt arrow target))
+      (arrow-ns/reflect-arrow evt arrow target))
     (when-let [shooter (.getShooter arrow)]
       (when (instance? Player shooter)
         (cond
