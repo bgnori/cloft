@@ -702,8 +702,6 @@
       (.teleport e (.add (.getLocation e) (.getModX direction) (.getModY direction) (.getModZ direction)))
       (c/add-velocity e (* (.getModX direction) 4) (* (.getModY direction) 1.5) (* (.getModZ direction) 4)))))
 
-(defn vector-from-to [ent-from ent-to]
-  (.toVector (.subtract (.getLocation ent-to) (.getLocation ent-from))))
 
 (defn block-place-event [evt]
   (let [block (.getBlock evt)]
@@ -714,10 +712,10 @@
       (reaction-skillchange player block (.getBlockAgainst evt))
       (invoke-alchemy player block (.getBlockAgainst evt))
       (transport/teleport-machine player block (.getBlockAgainst evt))
-      (comment (prn (vector-from-to block player))
-               (.setVelocity player (vector-from-to player block))
+      (comment (prn (coor/vector-from-to block player))
+               (.setVelocity player (coor/vector-from-to player block))
                (doseq [entity (.getNearbyEntities player 4 4 4)]
-                 (.setVelocity entity (vector-from-to entity block)))))
+                 (.setVelocity entity (coor/vector-from-to entity block)))))
     #_(build-long block (.getBlockAgainst evt))
     #_(when (sanctuary/is-in? (.getLocation block))
         (.setCancelled evt true))))

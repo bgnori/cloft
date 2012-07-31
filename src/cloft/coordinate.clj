@@ -2,6 +2,8 @@
     (:import [org.bukkit.util Vector])
     )
 
+(defn vector-from-to [ent-from ent-to]
+  (.toVector (.subtract (.getLocation ent-to) (.getLocation ent-from))))
 
 (defn xz-normalized-vector [v]
   (.normalize (Vector. (.getX v) 0.0 (.getZ v))))
