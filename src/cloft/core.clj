@@ -10,6 +10,7 @@
   (:require [cloft.block])
   (:require [cloft.coordinate :as coor])
   (:require [cloft.transport :as transport])
+  (:require [cloft.arrow-skill :as arrow-skill])
   ;(:require [clojure.core.match :as m])
   (:require [swank.swank])
   (:require [clojure.string :as s])
@@ -122,220 +123,7 @@
           (.setType b-up Material/RAILS)
           (c/consume-item player)))))))
 
-(defn block-of-arrow [entity]
-  (let [location (.getLocation entity)
-        velocity (.getVelocity entity)
-        direction (.multiply (.clone velocity) (double (/ 1 (.length velocity))))]
-    (.getBlock (.add (.clone location) direction))))
 
-(defn arrow-skill-explosion [entity]
-  (.createExplosion (.getWorld entity) (.getLocation entity) 0)
-  (let [block (block-of-arrow entity)]
-    (.breakNaturally block (ItemStack. Material/DIAMOND_PICKAXE)))
-  (.remove entity))
-
-(defn arrow-skill-torch [entity]
-  (let [location (.getLocation entity)
-        world (.getWorld location)]
-    (.setType (.getBlockAt world location) Material/TORCH)))
-
-(defn arrow-skill-pull [entity]
-  (let [block (block-of-arrow entity)]
-    (if (c/removable-block? block)
-      (let [shooter-loc (.getLocation (.getShooter entity))]
-        (.setType (.getBlock shooter-loc) (.getType block))
-        (when (= Material/MOB_SPAWNER (.getType block))
-          (.setSpawnedType (.getState (.getBlock shooter-loc)) (.getSpawnedType (.getState block))))
-        (.setType block Material/AIR)
-        (.teleport (.getShooter entity) (.add shooter-loc 0 1 0)))
-      (.sendMessage (.getShooter entity) "PULL failed")))
-  (.remove entity))
-
-(defn arrow-skill-teleport [entity]
-  (let [location (.getLocation entity)
-        world (.getWorld location)
-        shooter (.getShooter entity)]
-    (.setFallDistance shooter 0.0)
-    (c/teleport-without-angle shooter location)))
-
-(defn arrow-skill-fire [entity]
-  (let [location (.getLocation entity)
-        world (.getWorld location)]
-    (doseq [target (filter
-                     #(and (instance? LivingEntity %) (not= (.getShooter entity) %))
-                     (.getNearbyEntities entity 1 1 1))]
-      (.setFireTicks target 200))))
-
-(defn arrow-skill-flame [entity]
-  (doseq [x [-1 0 1] y [-1 0 1] z [-1 0 1]
-          :let [block (.getBlock (.add (.clone (.getLocation entity)) x y z))]
-          :when (= Material/AIR (.getType block))]
-    (.setType block Material/FIRE)))
-
-(defn arrow-skill-tree [entity]
-  (let [location (.getLocation entity)
-        world (.getWorld location)]
-    (.generateTree world location org.bukkit.TreeType/BIRCH)))
-
-(defn arrow-skill-web [entity]
-  (let [location (.getLocation entity)
-        world (.getWorld location)]
-    (.setType (.getBlockAt world location) Material/WEB)))
-
-(defn arrow-skill-ore [entity]
-  (let [block (block-of-arrow entity)]
-    (when (= (.getType block) Material/STONE)
-      (let [block-to-choices [Material/COAL_ORE
-                              Material/COAL_ORE
-                              Material/COBBLESTONE
-                              Material/COBBLESTONE
-                              Material/GRAVEL
-                              Material/IRON_ORE
-                              Material/LAPIS_ORE
-                              Material/GOLD_ORE
-                              Material/REDSTONE_ORE]]
-        (.setType block (rand-nth block-to-choices))))))
-
-(defn arrow-skill-shotgun [entity]
-  (.remove entity))
-
-(defn arrow-skill-ice [entity]
-  (if (.isLiquid (.getBlock (.getLocation entity)))
-    (.setType (.getBlock (.getLocation entity)) Material/ICE)
-    (let [block (block-of-arrow entity)
-          loc (.getLocation block)
-          loc-above (.add (.clone loc) 0 1 0)]
-      (when
-        (and
-          (= Material/AIR (.getType (.getBlock loc-above)))
-          (not= Material/AIR (.getType (.getBlock loc))))
-        (.setType (.getBlock loc-above) Material/SNOW))
-      (.dropItem (.getWorld loc-above) loc-above (ItemStack. Material/ARROW))))
-  (.remove entity))
-
-(defn arrow-skill-pumpkin [entity]
-  (future-call
-    #(do
-       (Thread/sleep 10)
-       (when-not (.isDead entity)
-         (let [block (.getBlock (.getLocation entity))]
-           (if (and
-                   (= 0 (rand-int 3))
-                   (= Material/AIR (.getType block)))
-             (do
-               (.setType block (rand-nth [Material/PUMPKIN Material/JACK_O_LANTERN]))
-               (.remove entity))
-             (.sendMessage (.getShooter entity) "PUMPKIN failed")))))))
-
-(defn arrow-skill-plant [entity]
-  (let [inventory (.getInventory (.getShooter entity))]
-    (.remove entity)
-    (doseq [x (range -3 4) z (range -3 4)]
-      (let [loc (.add (.getLocation entity) x 0 z)]
-        (when (and (.contains inventory Material/SEEDS)
-                   (= Material/AIR (.getType (.getBlock loc)))
-                   (= Material/SOIL (.getType (.getBlock (.add (.clone loc) 0 -1 0)))))
-          (c/consume-itemstack inventory Material/SEEDS)
-          (c/consume-itemstack inventory Material/SEEDS)
-          (.setType (.getBlock loc) Material/CROPS))))))
-
-(defn arrow-skill-diamond [entity]
-  (let [block (.getBlock (.getLocation entity))]
-    (condp = (.getType block)
-      Material/CROPS
-      (.setData block 7)
-      nil))
-  (let [block (block-of-arrow entity)]
-    (condp = (.getType block)
-      Material/COBBLESTONE
-      (.setType block Material/STONE)
-      Material/WOOL
-      (do
-        (.setType block Material/AIR)
-        (if (= 0 (rand-int 2))
-          (.dropItem (.getWorld entity) (.getLocation entity) (ItemStack. Material/WOOL))
-          (.spawn (.getWorld entity) (.getLocation entity) Sheep)))
-      nil))
-  (.remove entity)
-  (let [loc (.getLocation entity)]
-    (.dropItem (.getWorld loc) loc (ItemStack. Material/ARROW))))
-
-(defn something-like-quake [entity klass f]
-  (let [targets (.getNearbyEntities entity 5 3 5)]
-    (future-call
-      #(do
-         (doseq [_ [1 2 3]]
-           (doseq [target targets :when (instance? klass target)]
-             (Thread/sleep (rand-int 300))
-             (.playEffect (.getWorld target) (.getLocation target) Effect/ZOMBIE_CHEW_WOODEN_DOOR nil)
-             (c/add-velocity target (- (rand) 0.5) 0.9 (- (rand) 0.5))
-             (f target))
-           (Thread/sleep 1500))
-         (.remove entity)))))
-
-(defn arrow-skill-quake [entity]
-  (something-like-quake
-    entity
-    LivingEntity
-    (fn [_] nil)))
-
-(defn arrow-skill-popcorn [entity]
-  (something-like-quake
-    entity
-    Item
-    (fn [item]
-      (when (= 0 (rand-int 5))
-        (.dropItem (.getWorld item) (.getLocation item) (.getItemStack item)))
-      (when (= 0 (rand-int 5))
-        (.remove item)))))
-
-(defn arrow-skill-liquid [material duration entity]
-  (let [block (.getBlock (.getLocation entity))]
-    (if (= Material/AIR (.getType block))
-      (do
-        (.setType block material)
-        (future-call #(do
-                        (Thread/sleep duration)
-                        (when (.isLiquid block)
-                          (.setType block Material/AIR)))))
-      (.sendMessage (.getShooter entity) "failed")))
-  (future-call #(do
-                  (.dropItem (.getWorld entity) (.getLocation entity) (ItemStack. Material/ARROW))
-                  (.remove entity))))
-
-(defn arrow-skill-water [entity]
-  (arrow-skill-liquid Material/WATER 5000 entity))
-
-(defn arrow-skill-lava [entity]
-  (arrow-skill-liquid Material/LAVA 500 entity))
-
-(defn arrow-skill-woodbreak [entity]
-  (let [block (block-of-arrow entity)
-        table {Material/WOODEN_DOOR (repeat 6 (ItemStack. Material/WOOD))
-               Material/FENCE (repeat 6 (ItemStack. Material/STICK))
-               Material/WALL_SIGN (cons (ItemStack. Material/STICK)
-                                        (repeat 6 (ItemStack. Material/WOOD)))
-               Material/SIGN_POST (cons (ItemStack. Material/STICK)
-                                        (repeat 6 (ItemStack. Material/WOOD)))}
-        items (table (.getType block))
-        block2 (.getBlock (.getLocation entity))
-        items2 (table (.getType block2))]
-    (if items
-      (do
-        (.setType block Material/AIR)
-        (doseq [item items]
-          (.dropItemNaturally (.getWorld block) (.getLocation block) item)))
-      (if items2
-        (do
-          (.setType block2 Material/AIR)
-          (doseq [item items2]
-            (.dropItemNaturally (.getWorld block2) (.getLocation block2) item)))
-        (.sendMessage (.getShooter entity) "Woodbreak failed."))))
-  (.remove entity))
-
-(def arrow-skill (atom {}))
-(defn arrow-skill-of [player]
-  (get @arrow-skill (.getDisplayName player)))
 
 (def pickaxe-skill (atom {}))
 (defn pickaxe-skill-of [player]
@@ -491,18 +279,18 @@
   (let [shooter (.getEntity evt)]
     (when (instance? Player shooter)
       (when (or (.isSneaking shooter)
-                (= 'strong (arrow-skill-of shooter)))
+                (= 'strong (arrow-skill/of shooter)))
         (.setVelocity (.getProjectile evt) (.multiply (.getVelocity (.getProjectile evt)) 3)))
       (comment (.setCancelled evt true))
       (comment (.setVelocity shooter (.multiply (.getVelocity (.getProjectile evt)) 2)))
       (comment (when (and
               (get @bowgun-players (.getDisplayName shooter))
-              (not= arrow-skill-teleport (arrow-skill-of shooter)))
+              (not= arrow-skill/teleport (arrow-skill/of shooter)))
         (future-call #(do
                         (Thread/sleep 100) (.shootArrow (.getEntity evt))
                         (Thread/sleep 300) (.shootArrow (.getEntity evt))
                         (Thread/sleep 500) (.shootArrow (.getEntity evt))))))
-      (when (= 'sniping (arrow-skill-of shooter))
+      (when (= 'sniping (arrow-skill/of shooter))
         (let [arrow (.getProjectile evt)
               direction (.getDirection (.getLocation shooter))]
          (prn
@@ -519,7 +307,7 @@
                         (check-and-thunder shooter)
                         (Thread/sleep 1000)
                         (swap! last-vertical-shots dissoc shooter-name))))
-      #_(when (= 'arrow-skill-tntmissile (arrow-skill-of shooter))
+      #_(when (= 'arrow-skill/tntmissile (arrow-skill/of shooter))
         (let [inventory (.getInventory shooter)
               arrow (.getProjectile evt)]
           (if (.contains inventory Material/TNT)
@@ -539,7 +327,7 @@
                      false))
                    true)))
             (c/broadcast (.getDisplayName shooter) " has no TNT."))))
-      (when (= arrow-skill-shotgun (arrow-skill-of shooter))
+      (when (= arrow-skill/shotgun (arrow-skill/of shooter))
         (doseq [_ (range 1 80)]
           (let [rand1 (fn [] (* 0.8 (- (rand) 0.5)))
                 arrow (.launchProjectile shooter Arrow)]
@@ -680,39 +468,39 @@
 (defn arrow-skillchange [player block block-against]
   (when (blazon? Material/STONE (.getBlock (.add (.getLocation block) 0 -1 0)))
     (let [table {Material/GLOWSTONE ['strong "STRONG"]
-                 Material/TNT [arrow-skill-explosion "EXPLOSION"]
-                 Material/TORCH [arrow-skill-torch "TORCH"]
-                 Material/REDSTONE_TORCH_ON [arrow-skill-pull "PULL"]
-                 Material/YELLOW_FLOWER [arrow-skill-teleport "TELEPORT"]
-                 Material/RED_ROSE [arrow-skill-fire "FIRE"]
-                 Material/SAPLING [arrow-skill-tree "TREE"]
-                 Material/WEB [arrow-skill-web "WEB"]
-                 Material/WORKBENCH [arrow-skill-ore "ORE"]
+                 Material/TNT [arrow-skill/explosion "EXPLOSION"]
+                 Material/TORCH [arrow-skill/torch "TORCH"]
+                 Material/REDSTONE_TORCH_ON [arrow-skill/pull "PULL"]
+                 Material/YELLOW_FLOWER [arrow-skill/teleport "TELEPORT"]
+                 Material/RED_ROSE [arrow-skill/fire "FIRE"]
+                 Material/SAPLING [arrow-skill/tree "TREE"]
+                 Material/WEB [arrow-skill/web "WEB"]
+                 Material/WORKBENCH [arrow-skill/ore "ORE"]
                  Material/TRAP_DOOR ['digg "DIGG"]
                  Material/LADDER ['trap "TRAP"]
-                 Material/CACTUS [arrow-skill-shotgun "SHOTGUN"]
+                 Material/CACTUS [arrow-skill/shotgun "SHOTGUN"]
                  Material/RAILS ['cart "CART"]
                  Material/BOOKSHELF ['mobchange "MOBCHANGE"]
-                 Material/SANDSTONE ['arrow-skill-tntmissile "TNTMissle"]
+                 Material/SANDSTONE ['arrow-skill/tntmissile "TNTMissle"]
                  #_( Material/STONE ['sniping "SNIPING"])
-                 Material/SNOW_BLOCK [arrow-skill-ice "ICE"]
+                 Material/SNOW_BLOCK [arrow-skill/ice "ICE"]
                  Material/POWERED_RAIL ['exp "EXP"]
                  Material/PISTON_BASE ['super-knockback "SUPER-KNOCKBACK"]
-                 Material/JACK_O_LANTERN [arrow-skill-pumpkin "PUMPKIN"]
-                 Material/PUMPKIN [arrow-skill-pumpkin "PUMPKIN"]
-                 Material/CROPS [arrow-skill-plant "PLANT"]
-                 Material/DIAMOND_BLOCK [arrow-skill-diamond "CRAZY DIAMOND"]
-                 #_( Material/FIRE [arrow-skill-flame "FLAME"])
-                 Material/BROWN_MUSHROOM [arrow-skill-quake "QUAKE"]
-                 Material/RED_MUSHROOM ['arrow-skill-poison "POISON"]
-                 Material/FENCE_GATE [arrow-skill-popcorn "POPCORN"]
-                 Material/WATER [arrow-skill-water "WATER"]
-                 Material/LAVA [arrow-skill-lava "LAVA"]
-                 Material/LOG [arrow-skill-woodbreak "WOODBREAK"]}]
+                 Material/JACK_O_LANTERN [arrow-skill/pumpkin "PUMPKIN"]
+                 Material/PUMPKIN [arrow-skill/pumpkin "PUMPKIN"]
+                 Material/CROPS [arrow-skill/plant "PLANT"]
+                 Material/DIAMOND_BLOCK [arrow-skill/diamond "CRAZY DIAMOND"]
+                 #_( Material/FIRE [arrow-skill/flame "FLAME"])
+                 Material/BROWN_MUSHROOM [arrow-skill/quake "QUAKE"]
+                 Material/RED_MUSHROOM ['arrow-skill/poison "POISON"]
+                 Material/FENCE_GATE [arrow-skill/popcorn "POPCORN"]
+                 Material/WATER [arrow-skill/water "WATER"]
+                 Material/LAVA [arrow-skill/lava "LAVA"]
+                 Material/LOG [arrow-skill/woodbreak "WOODBREAK"]}]
       (when-let [skill-name (table (.getType block))]
         (.playEffect (.getWorld block) (.getLocation block) Effect/MOBSPAWNER_FLAMES nil)
-        (c/broadcast (.getDisplayName player) " changed arrow-skill to " (last skill-name))
-        (swap! arrow-skill assoc (.getDisplayName player) (first skill-name))))))
+        (arrow-skill/set-skill player skill-name)))))
+
 
 (defn pickaxe-skillchange [player block block-against]
   (when (blazon? Material/IRON_ORE (.getBlock (.add (.getLocation block) 0 -1 0)))
@@ -1405,7 +1193,7 @@
               (instance? CaveSpider entity))
         (.dropItem (.getWorld entity) (.getLocation entity) (ItemStack. Material/GOLD_SWORD)))
       (.setDroppedExp evt (int (* (.getDroppedExp evt) (/ 15 (.getHealth killer)))))
-      (when (= 'exp (arrow-skill-of killer))
+      (when (= 'exp (arrow-skill/of killer))
         (.setDroppedExp evt (int (* (.getDroppedExp evt) 3))))
       (player/record-and-report killer entity evt))))
 
@@ -1523,18 +1311,18 @@
           (do
             (chain-entity target shooter)
             (c/consume-itemstack (.getInventory shooter) Material/WEB))
-          (= arrow-skill-explosion (arrow-skill-of shooter))
+          (= arrow-skill/explosion (arrow-skill/of shooter))
           (.damage target 10 shooter)
-          (= arrow-skill-ice (arrow-skill-of shooter))
+          (= arrow-skill/ice (arrow-skill/of shooter))
           (freeze-for-20-sec target)
-          (= 'trap (arrow-skill-of shooter))
+          (= 'trap (arrow-skill/of shooter))
           ((rand-nth [chain-entity
                       (comp freeze-for-20-sec first list)
                       digg-entity])
              target shooter)
-          (= 'digg (arrow-skill-of shooter))
+          (= 'digg (arrow-skill/of shooter))
           (digg-entity target shooter)
-          (= arrow-skill-pumpkin (arrow-skill-of shooter))
+          (= arrow-skill/pumpkin (arrow-skill/of shooter))
           (condp instance? target
             Player
             (let [helmet (.getHelmet (.getInventory target))]
@@ -1559,7 +1347,7 @@
                                     (.setType block block-type))
                                   (.damage newmob (.getMaxHealth newmob)))))))
             nil)
-          (= arrow-skill-diamond (arrow-skill-of shooter))
+          (= arrow-skill/diamond (arrow-skill/of shooter))
           (cond
             (some #(instance? % target) [Zombie Skeleton])
             (do
@@ -1578,11 +1366,11 @@
                  (if (instance? Player target)
                    (.getDisplayName target)
                    (c/entity2name target)))))
-          (= 'arrow-skill-poison (arrow-skill-of shooter))
+          (= 'arrow-skill/poison (arrow-skill/of shooter))
           (reaction-skill-poison nil target)
-          (= 'exp (arrow-skill-of shooter))
+          (= 'exp (arrow-skill/of shooter))
           (.damage shooter 2)
-          (= 'super-knockback (arrow-skill-of shooter))
+          (= 'super-knockback (arrow-skill/of shooter))
           (let [direction (.subtract (.getLocation shooter)
                                      (.getLocation target))
                 vector (.multiply (.normalize (.toVector direction)) 3)]
@@ -1591,7 +1379,7 @@
               (let [vector (.multiply vector -1)]
                 (Thread/sleep 1)
                 (c/add-velocity target (.getX vector) (+ (.getY vector) 1.0) (.getY vector)))))
-          (= 'mobchange (arrow-skill-of shooter))
+          (= 'mobchange (arrow-skill/of shooter))
           (do
             (let [change-to (rand-nth [Blaze Boat CaveSpider Chicken Chicken
                                        Chicken Cow Cow Cow Creeper Enderman
@@ -1603,11 +1391,11 @@
                                        TNTPrimed Villager Wolf Ocelot Zombie])]
               (.spawn (.getWorld target) (.getLocation target) change-to))
             (.remove target))
-          (= arrow-skill-pull (arrow-skill-of shooter))
+          (= arrow-skill/pull (arrow-skill/of shooter))
           (.teleport target shooter)
-          (= arrow-skill-fire (arrow-skill-of shooter))
+          (= arrow-skill/fire (arrow-skill/of shooter))
           (.setFireTicks target 400)
-          (= 'cart (arrow-skill-of shooter))
+          (= 'cart (arrow-skill/of shooter))
           (let [cart (.spawn (.getWorld target) (.getLocation target) Minecart)]
             (.setPassenger cart target))))
       (when (instance? Blaze shooter)
@@ -1742,7 +1530,7 @@
             (player-attacks-pig-event evt attacker target))
           (when (instance? Chicken target)
             (player-attacks-chicken-event evt attacker target))
-          #_(when (= 'fly (arrow-skill-of attacker))
+          #_(when (= 'fly (arrow-skill/of attacker))
             (future-call #(do
                             (prn 0)
                             (c/add-velocity target 0 1 0)
@@ -1784,7 +1572,7 @@
                          (not (instance? TNTPrimed actual-attacker))
                          (not (and
                            (instance? Player actual-attacker)
-                           (= arrow-skill-diamond (arrow-skill-of actual-attacker)))))
+                           (= arrow-skill/diamond (arrow-skill/of actual-attacker)))))
                 (skill target actual-attacker))))
           (when (and (instance? Zombie attacker) (not (instance? PigZombie attacker)))
             (if (player/zombie? target)
@@ -1840,7 +1628,7 @@
 (defn arrow-hit-event [evt entity]
   (cond
     (instance? Player (.getShooter entity))
-    (let [skill (arrow-skill-of (.getShooter entity))]
+    (let [skill (arrow-skill/of (.getShooter entity))]
       (cond
         (fn? skill) (skill entity)
         (symbol? skill) nil
