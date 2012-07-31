@@ -170,3 +170,9 @@
     (fn? skill) (second (re-find #"\$.*?[_-]skill[_-](.*?)@" (str skill)))
     (nil? skill) nil
     :else (str skill)))
+
+(defn good-bye [klass world]
+  (count (seq (map #(.remove %)
+                   (filter #(instance? klass %)
+                           (.getLivingEntities world))))))
+

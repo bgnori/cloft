@@ -13,6 +13,7 @@
   (:require [cloft.skill :as skill])
   (:require [cloft.arrow-skill :as arrow-skill])
   (:require [cloft.reaction-skill :as reaction-skill])
+  (:require [cloft.creeper :as creeper])
   ;(:require [clojure.core.match :as m])
   (:require [swank.swank])
   (:require [clojure.string :as s])
@@ -1106,48 +1107,6 @@
       (instance? Player entity) (player/death-event evt entity)
       (and (instance? LivingEntity entity) (.getKiller entity)) (entity-murder-event evt entity))))
 
-(defn creeper-explosion-1 [evt entity]
-  (.setCancelled evt true)
-  (.createExplosion (.getWorld entity) (.getLocation entity) 0)
-  (doseq [e (filter #(instance? LivingEntity %) (.getNearbyEntities entity 5 5 5))]
-    (let [v (.multiply (.toVector (.subtract (.getLocation e) (.getLocation entity))) 2.0)
-          x (- 5 (.getX v))
-          z (- 5 (.getZ v))]
-      (when (instance? Player e)
-        (.sendMessage e "Air Explosion"))
-      (.setVelocity e (Vector. x 1.5 z))))
-  (comment (let [another (.spawn (.getWorld entity) (.getLocation entity) Creeper)]
-             (.setVelocity another (Vector. 0 1 0)))))
-
-(defn creeper-explosion-2 [evt entity]
-  (.setCancelled evt true)
-  (if (sanctuary/is-in? (.getLocation entity))
-    (prn 'cancelled)
-    (let [loc (.getLocation entity)]
-      (.setType (.getBlock loc) Material/PUMPKIN)
-      (c/broadcast "break the bomb before it explodes!")
-      (future-call #(do
-                      (Thread/sleep 7000)
-                      (c/broadcast "zawa...")
-                      (Thread/sleep 1000)
-                      (when (= (.getType (.getBlock loc)) Material/PUMPKIN)
-                        (.setType (.getBlock loc) Material/AIR)
-                        (let [tnt (.spawn (.getWorld loc) loc TNTPrimed)]
-                          (Thread/sleep 1000)
-                          (.remove tnt)
-                          (.createExplosion (.getWorld loc) loc 6 true))))))))
-
-(defn creeper-explosion-3 [evt entity]
-  (.setCancelled evt true)
-  (.createExplosion (.getWorld entity) (.getLocation entity) 0))
-
-(def creeper-explosion-idx (atom 0))
-(defn current-creeper-explosion []
-  (get [(fn [_ _] nil)
-        creeper-explosion-1
-        creeper-explosion-2
-        creeper-explosion-3
-        ] (rem @creeper-explosion-idx 4)))
 
 (defn entity-explode-event [evt]
   (when-let [entity (.getEntity evt)]
@@ -1159,8 +1118,8 @@
 
         (instance? Creeper entity)
         (do
-          ((current-creeper-explosion) evt entity)
-          (swap! creeper-explosion-idx inc))
+          ((creeper/current-explosion) evt entity)
+          (creeper/explosion-next-idx))
 
         (instance? Fireball entity)
         (when (instance? Cow (.getShooter entity))
@@ -1384,11 +1343,7 @@
         (player/rebirth-from-zombie target))
 
       (= EntityDamageEvent$DamageCause/ENTITY_EXPLOSION (.getCause evt))
-      (do
-        (prn 'entity-explosion (.getEntity evt))
-        (if (= (rem @creeper-explosion-idx 3) 0)
-          (.setDamage evt (min (.getDamage evt) 19))
-          (.setDamage evt 0)))
+      (creeper/entity-explosion evt)
 
       :else
       (do
@@ -1641,12 +1596,7 @@
   (c/auto-proxy [Listener] []
                 (onEndermanPickup [evt] (enderman-pickup-event* evt)))))
 
-(defn good-bye [klass]
-  (count (seq (map #(.remove %)
-                   (filter #(instance? klass %)
-                           (.getLivingEntities world))))))
 
-(def good-bye-creeper (partial good-bye Creeper))
 
 (def pre-stalk (ref nil))
 
